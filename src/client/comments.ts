@@ -210,8 +210,12 @@ export class Comments {
     this.placePopover(this.threadBody(t, true), rect, placement);
   }
 
-  /** The composer for a new comment on [from, to) of `path`. */
-  compose(path: string, from: number, to: number, quote: string, rect: DOMRect, onDone: () => void): void {
+  /**
+   * The composer for a new comment on [from, to) of `path`, beside `rect`
+   * (or below or above it, with placement 'line'). `note` says something
+   * about the anchor, such as that it could only be approximated.
+   */
+  compose(path: string, from: number, to: number, quote: string, rect: DOMRect, onDone: () => void, opts: { placement?: 'beside' | 'line'; note?: string } = {}): void {
     this.popoverThread = null;
     const box = h('textarea', { class: 'reply-box', rows: '3', placeholder: 'Add a comment…' });
     const post = h('button', { class: 'primary' }, 'Comment');
@@ -229,9 +233,10 @@ export class Comments {
     this.placePopover([
       h('div', { class: 'thread-head' }, h('span', { class: 'thread-where' }, 'New comment')),
       h('div', { class: 'thread-quote' }, quote.length > 160 ? `${quote.slice(0, 160)}…` : quote),
+      ...(opts.note ? [h('div', { class: 'compose-note' }, opts.note)] : []),
       box,
       h('div', { class: 'actions' }, cancel, post),
-    ], rect);
+    ], rect, opts.placement);
     box.focus();
   }
 

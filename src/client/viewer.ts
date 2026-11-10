@@ -145,6 +145,22 @@ function figureBoxes(fnArray: number[], argsArray: unknown[][]): Array<[number, 
   return boxes;
 }
 
+/** A point on a PDF page, in PDF points from the page's top-left. */
+export interface PdfPoint {
+  page: number;
+  x: number;
+  y: number;
+}
+
+/** Text selected in the PDF, with where it starts and ends. */
+export interface PdfSelection {
+  text: string;
+  start: PdfPoint;
+  end: PdfPoint;
+  /** The selection's box on screen. */
+  rect: DOMRect;
+}
+
 export interface ViewerOptions {
   project: () => string;
   onJumpToSource: (file: string, line: number) => void;
@@ -159,6 +175,8 @@ export interface ViewerOptions {
   onFigureDoubleClick?: (click: FigureClick) => void;
   /** Pages of the compiled PDF found slow to draw so far (empty for a new PDF). */
   onSlowPages?: (pages: SlowPage[]) => void;
+  /** Start a comment on text selected in the PDF (its Comment button, or Ctrl+Alt+M). */
+  onCommentSelection?: (selection: PdfSelection) => void;
 }
 
 class PdfView {
@@ -166,7 +184,7 @@ class PdfView {
   private readonly pagesEl = h('div', { class: 'pdf-pages' });
   private doc: PDFDocumentProxy | null = null;
   private task: PDFDocumentLoadingTask | null = null;
-  private pages: Array<{ el: HTMLDivElement; page: PDFPageProxy; rendered: number; drawn?: boolean; figures?: FigureBox[]; width: number; height: number }> = [];
+  private pages: Array<{ el: HTMLDivElement; page: PDFPageProxy; rendered: number; drawn?: boolean; figures?: FigureBox[]; text?: HTMLElement; width: number; height: number }> = [];
   private observer: IntersectionObserver;
   scale = 1;
   fitWidth = true;
@@ -174,6 +192,9 @@ class PdfView {
   onZoom: (() => void) | null = null;
   onDoubleClick: ((page: number, x: number, y: number, clientX: number, clientY: number) => void) | null = null;
   onPinClick: ((id: string, rect: DOMRect) => void) | null = null;
+  onCommentSelection: ((selection: PdfSelection) => void) | null = null;
+  /** The Comment button beside text selected in the PDF. */
+  private readonly commentTip = h('button', { class: 'pdf-comment-tip', title: 'Comment on the selected text (Ctrl+Alt+M)' }, 'Comment');
   /** Each page's first draw: how long it took and how many operations it ran. */
   onPageDrawn: ((page: number, ms: number, ops: number) => void) | null = null;
   private pins: PdfPin[] = [];
@@ -297,6 +318,20 @@ class PdfView {
       }
     }, { root: this.scroll, rootMargin: '600px 0px' });
     new ResizeObserver(() => { if (this.fitWidth && this.doc) this.applyScale(this.fitScale()); }).observe(this.scroll);
+    // Selecting text (in the PDF.js text layer) offers a Comment button.
+    this.pagesEl.addEventListener('mouseup', () => setTimeout(() => this.showCommentTip()));
+    document.addEventListener('selectionchange', () => { if (this.commentTip.isConnected && !this.selection()) this.commentTip.remove(); });
+    this.commentTip.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.commentOnSelection();
+    });
+    window.addEventListener('keydown', (e) => {
+      if (e.ctrlKey && e.altKey && !e.shiftKey && e.key.toLowerCase() === 'm' && this.selection()) {
+        e.preventDefault();
+        this.commentOnSelection();
+      }
+    });
     this.scroll.addEventListener('wheel', (e) => {
       if (!e.ctrlKey) return;
       e.preventDefault();
@@ -319,6 +354,8 @@ class PdfView {
         const vp = page.getViewport({ scale: 1 });
         const el = h('div', { class: 'pdf-page', 'data-index': String(i - 1) }) as HTMLDivElement;
         el.addEventListener('dblclick', (e) => {
+          // The double-click also selected a word in the text layer; it is a jump, not a selection.
+          getSelection()?.removeAllRanges();
           const rect = el.getBoundingClientRect();
           this.onDoubleClick?.(i, (e.clientX - rect.left) / this.scale, (e.clientY - rect.top) / this.scale, e.clientX, e.clientY);
         });
@@ -375,6 +412,8 @@ class PdfView {
   }
 
   private layout(): void {
+    // The text layers scale with the page through this variable.
+    this.pagesEl.style.setProperty('--total-scale-factor', String(this.scale));
     for (const p of this.pages) {
       p.el.style.width = `${Math.floor(p.width * this.scale)}px`;
       p.el.style.height = `${Math.floor(p.height * this.scale)}px`;
@@ -453,6 +492,70 @@ class PdfView {
     if (p.rendered !== scale) return;
     p.el.querySelector('canvas')?.remove();
     p.el.prepend(canvas);
+    if (!p.text) this.addTextLayer(p);
+  }
+
+  /**
+   * The page's text as transparent, selectable spans over the canvas
+   * (PDF.js's text layer). Its positions are relative to the page, so it
+   * follows zooming through --total-scale-factor and is built once.
+   */
+  private addTextLayer(p: (typeof this.pages)[number]): void {
+    const div = h('div', { class: 'textLayer' });
+    p.text = div;
+    p.el.append(div);
+    const layer = new pdfjs.TextLayer({ textContentSource: p.page.streamTextContent(), container: div, viewport: p.page.getViewport({ scale: this.scale }) });
+    layer.render().catch(() => { /* no text: nothing to select */ });
+  }
+
+  /** The text selected in this PDF, or null. */
+  selection(): PdfSelection | null {
+    const sel = getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
+    const range = sel.getRangeAt(0);
+    if (!this.pagesEl.contains(range.commonAncestorContainer)) return null;
+    const text = sel.toString();
+    if (!text.trim()) return null;
+    const rects = [...range.getClientRects()].filter((r) => r.width > 0 && r.height > 0);
+    if (!rects.length) return null;
+    const first = rects[0];
+    const last = rects[rects.length - 1];
+    const start = this.pointAt(first.left + 1, (first.top + first.bottom) / 2);
+    const end = this.pointAt(last.right - 1, (last.top + last.bottom) / 2);
+    if (!start || !end) return null;
+    return { text, start, end, rect: range.getBoundingClientRect() };
+  }
+
+  /** The page point under a screen point (the nearest page, vertically). */
+  private pointAt(clientX: number, clientY: number): PdfPoint | null {
+    let best: { i: number; rect: DOMRect; d: number } | null = null;
+    for (const [i, p] of this.pages.entries()) {
+      const rect = p.el.getBoundingClientRect();
+      const d = clientY < rect.top ? rect.top - clientY : clientY > rect.bottom ? clientY - rect.bottom : 0;
+      if (!best || d < best.d) best = { i, rect, d };
+      if (d === 0) break;
+    }
+    if (!best) return null;
+    return { page: best.i + 1, x: (clientX - best.rect.left) / this.scale, y: (clientY - best.rect.top) / this.scale };
+  }
+
+  private showCommentTip(): void {
+    const selection = this.selection();
+    if (!selection || !this.onCommentSelection) { this.commentTip.remove(); return; }
+    const page = this.pages[selection.end.page - 1];
+    if (!page) return;
+    const s = this.scale;
+    // Below the end of the selection, inside the page so it scrolls along.
+    const left = Math.max(0, Math.min(selection.end.x * s + 4, page.width * s - 90));
+    this.commentTip.style.left = `${left}px`;
+    this.commentTip.style.top = `${selection.end.y * s + 10}px`;
+    page.el.append(this.commentTip);
+  }
+
+  private commentOnSelection(): void {
+    const selection = this.selection();
+    this.commentTip.remove();
+    if (selection) this.onCommentSelection?.(selection);
   }
 
   /**
@@ -514,6 +617,7 @@ export class Viewer {
       else void this.syncToSource(page, x, y);
     };
     this.pdf.onPinClick = (id, rect) => this.opts.onPinClick(id, rect);
+    if (this.opts.onCommentSelection) this.pdf.onCommentSelection = this.opts.onCommentSelection;
     this.pdf.onPageDrawn = (page, ms, ops) => {
       if (ms < SLOW_PAGE_MS && ops < HEAVY_PAGE_OPS) return;
       this.slowPages = [...this.slowPages.filter((s) => s.page !== page), { page, ms, ops }].sort((a, b) => a.page - b.page);

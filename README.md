@@ -115,6 +115,11 @@ must not be exposed to the open internet.
   greyed at the bottom — and jumps to the text. **Link** on a thread copies
   an address (`?project=…&comment=<id>`) that opens the project at that
   thread, for anyone who has access to the project. View-only people can comment.
+  Text selected in the PDF gets a **Comment** button too (or Ctrl+Alt+M):
+  SyncTeX finds the source lines, and the selected words are looked up in
+  them, despite ligatures, hyphenation and markup. When the words cannot be
+  found exactly, the composer says that the match is approximate or covers
+  whole lines.
   Nothing is written into the .tex files: threads live beside them, stay
   attached to their words while people type, are committed with every label
   (`.texwerk/comments.json`), and come along on request as **Project as .zip
@@ -282,6 +287,7 @@ npm run test:fuzz                           # the mirror fuzzer, 5 seeds x 60 st
 node test/e2e-bridge.ts <origin> <project> <mirrorDir>          # with a server and a running bridge
 node test/e2e-latex-editing.ts <origin> <projectsRoot>          # completion, Enter and vim in Chromium
 node test/e2e-links-and-sync.ts <origin>                        # comment links, double-click to PDF, lineno fix
+node test/e2e-pdf-comment.ts <origin>                           # a comment started from text selected in the PDF
 MODE=all node test/stress-bridge.ts <origin> <project> <mirrorDir> 8
 ```
 

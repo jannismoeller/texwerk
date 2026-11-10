@@ -6,7 +6,8 @@ import { formatMegabytes, GITHUB_MAX_FILE_BYTES, LARGE_FILE_BYTES, pdfSizeLevel,
 import { CodeEditor } from './codeEditor.ts';
 import { FileTree } from './tree.ts';
 import { HistoryView } from './historyView.ts';
-import { Viewer, type FigureClick, type PdfPin, type SlowPage } from './viewer.ts';
+import { Viewer, type FigureClick, type PdfPin, type PdfSelection, type SlowPage } from './viewer.ts';
+import { matchPdfSelection } from '@shared/pdfMatch.ts';
 import { Comments } from './comments.ts';
 import { Chat } from './chat.ts';
 import { authorRuns } from '@shared/provenance.ts';
@@ -198,7 +199,39 @@ export async function renderEditor(app: HTMLElement, project: string, meInfo: Me
     onPdfLoaded: () => schedulePins(0),
     onSlowPages: (pages) => { slowPages = pages; renderPdfInfo(); },
     onFigureDoubleClick: (click) => void figureMenu(click),
+    onCommentSelection: (selection) => void commentFromPdf(selection),
   });
+
+  /**
+   * A comment on text selected in the PDF: SyncTeX gives the source lines
+   * of the selection's start and end, and the selected words are looked up
+   * in those lines (pdfMatch.ts). The comment is then an ordinary one on
+   * that source range.
+   */
+  async function commentFromPdf(selection: PdfSelection): Promise<void> {
+    let a: { file: string; line: number } | null = null;
+    let b: { file: string; line: number } | null = null;
+    try {
+      [a, b] = await Promise.all([
+        viewer.sourceAt(selection.start.page, selection.start.x, selection.start.y),
+        viewer.sourceAt(selection.end.page, selection.end.x, selection.end.y),
+      ]);
+    } catch { /* below */ }
+    if (!a || !texts.has(a.file)) { toast('SyncTeX finds no source text for this part of the PDF.', 'bad'); return; }
+    const file = a.file;
+    const source = texts.get(file)!.toString();
+    // An end in another file (an \input in between): the start's line alone.
+    const last = b && b.file === file ? b.line : a.line;
+    const match = matchPdfSelection(source, selection.text, a.line, last);
+    const lo = Math.min(a.line, last);
+    const hi = Math.max(a.line, last);
+    const note = match.kind === 'lines'
+      ? `The selected text was not found in the source. This comment will cover ${lo === hi ? `line ${lo}` : `lines ${lo}-${hi}`} of ${file}.`
+      : match.kind === 'fuzzy' ? 'The selected text was matched approximately in the source. The quote above shows the text this comment will be on.' : undefined;
+    openFile(file);
+    current?.revealPosition(match.from);
+    comments.compose(file, match.from, match.to, source.slice(match.from, match.to), selection.rect, () => undefined, { placement: 'line', note });
+  }
 
   /**
    * A double-click on an included figure: a small menu right there, to open
