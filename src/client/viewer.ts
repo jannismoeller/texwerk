@@ -161,6 +161,13 @@ export interface PdfSelection {
   rect: DOMRect;
 }
 
+/** Where to zoom towards, in screen coordinates; `gesture` for wheel and pinch steps. */
+interface ZoomAt {
+  clientX: number;
+  clientY: number;
+  gesture?: boolean;
+}
+
 export interface ViewerOptions {
   project: () => string;
   onJumpToSource: (file: string, line: number) => void;
@@ -335,7 +342,8 @@ class PdfView {
     this.scroll.addEventListener('wheel', (e) => {
       if (!e.ctrlKey) return;
       e.preventDefault();
-      this.zoom(e.deltaY < 0 ? 1.1 : 1 / 1.1);
+      // Towards the cursor (Ctrl+wheel, and a touchpad pinch, which arrives as one).
+      this.zoom(e.deltaY < 0 ? 1.1 : 1 / 1.1, { clientX: e.clientX, clientY: e.clientY, gesture: true });
     }, { passive: false });
   }
 
@@ -420,11 +428,35 @@ class PdfView {
     }
   }
 
-  private applyScale(scale: number): void {
-    const anchor = this.scroll.scrollHeight > 0 ? (this.scroll.scrollTop + this.scroll.clientHeight / 2) / this.scroll.scrollHeight : 0;
+  /**
+   * Zoom so that the page point at `at` (screen coordinates; the middle of
+   * the view by default) stays where it is, as far as scrolling allows: a
+   * page narrower than the view stays centred.
+   */
+  private applyScale(scale: number, at?: ZoomAt): void {
+    const view = this.scroll.getBoundingClientRect();
+    const x = at?.clientX ?? view.left + view.width / 2;
+    const y = at?.clientY ?? view.top + view.height / 2;
+    // One pinch is many wheel events. They all aim at the point under the
+    // cursor when it began, so a step that could not keep it in place (the
+    // page was centred, or scrolling ended at an edge) does not shift the
+    // aim of the next one.
+    const last = this.gesture;
+    const now = performance.now();
+    const anchor = at?.gesture && last && now - last.time < 400 && Math.abs(last.clientX - x) < 3 && Math.abs(last.clientY - y) < 3
+      ? last.anchor : this.anchorAt(x, y);
+    this.gesture = at?.gesture && anchor ? { anchor, clientX: x, clientY: y, time: now } : null;
+    const ratio = this.scroll.scrollHeight > 0 ? (this.scroll.scrollTop + this.scroll.clientHeight / 2) / this.scroll.scrollHeight : 0;
     this.scale = scale;
     this.layout();
-    this.scroll.scrollTop = anchor * this.scroll.scrollHeight - this.scroll.clientHeight / 2;
+    this.commentTip.remove();
+    if (anchor) {
+      const rect = this.pages[anchor.index].el.getBoundingClientRect();
+      this.scroll.scrollLeft += rect.left + anchor.x * scale - x;
+      this.scroll.scrollTop += rect.top + anchor.y * scale - y;
+    } else {
+      this.scroll.scrollTop = ratio * this.scroll.scrollHeight - this.scroll.clientHeight / 2;
+    }
     this.drawPins();
     for (const p of this.pages) p.rendered = 0;
     for (const p of this.pages) {
@@ -435,9 +467,24 @@ class PdfView {
     this.onZoom?.();
   }
 
-  zoom(factor: number): void {
+  private gesture: { anchor: { index: number; x: number; y: number }; clientX: number; clientY: number; time: number } | null = null;
+
+  zoom(factor: number, at?: ZoomAt): void {
     this.fitWidth = false;
-    this.applyScale(Math.max(0.2, Math.min(5, this.scale * factor)));
+    this.applyScale(Math.max(0.2, Math.min(5, this.scale * factor)), at);
+  }
+
+  /** The page nearest a screen point, and the point in that page's PDF points. */
+  private anchorAt(clientX: number, clientY: number): { index: number; x: number; y: number } | null {
+    let best: { index: number; rect: DOMRect; d: number } | null = null;
+    for (const [index, p] of this.pages.entries()) {
+      const rect = p.el.getBoundingClientRect();
+      const d = clientY < rect.top ? rect.top - clientY : clientY > rect.bottom ? clientY - rect.bottom : 0;
+      if (!best || d < best.d) best = { index, rect, d };
+      if (d === 0) break;
+    }
+    if (!best || !best.rect.width) return null;
+    return { index: best.index, x: (clientX - best.rect.left) / this.scale, y: (clientY - best.rect.top) / this.scale };
   }
 
   fit(): void {
@@ -528,15 +575,8 @@ class PdfView {
 
   /** The page point under a screen point (the nearest page, vertically). */
   private pointAt(clientX: number, clientY: number): PdfPoint | null {
-    let best: { i: number; rect: DOMRect; d: number } | null = null;
-    for (const [i, p] of this.pages.entries()) {
-      const rect = p.el.getBoundingClientRect();
-      const d = clientY < rect.top ? rect.top - clientY : clientY > rect.bottom ? clientY - rect.bottom : 0;
-      if (!best || d < best.d) best = { i, rect, d };
-      if (d === 0) break;
-    }
-    if (!best) return null;
-    return { page: best.i + 1, x: (clientX - best.rect.left) / this.scale, y: (clientY - best.rect.top) / this.scale };
+    const at = this.anchorAt(clientX, clientY);
+    return at ? { page: at.index + 1, x: at.x, y: at.y } : null;
   }
 
   private showCommentTip(): void {
