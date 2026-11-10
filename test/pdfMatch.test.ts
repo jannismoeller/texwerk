@@ -71,6 +71,36 @@ test('text that is not in the source falls back to the whole lines', () => {
   assert.deepEqual(find(src, '', 1, 3), { text: 'first line\n  second line  \nthird line', kind: 'lines' });
 });
 
+test('a selection that starts at the first letter of an \\item, or one letter late, starts at the word', () => {
+  const src = String.raw`\begin{itemize}
+    \item Morning route: short-distance walk along the river, stops at three bridges and a small village celebration, the old-town museum with its archives, lunch breaks scheduled between the long climbs and steep descents.
+    \item Evening route: both school classes at the lake shore.
+\end{itemize}
+`;
+  const item = src.split('\n')[1].trim().slice('\\item '.length);
+  const pdf = 'Morning route: short-distance walk along the river, stops at three bridges and a small village cel-\nebration, the old-town museum with its archives, lunch breaks scheduled between the long climbs and\nsteep descents.';
+  assert.deepEqual(find(src, pdf, 2), { text: item, kind: 'exact' });
+  // The text layer's characters sit a little left of the printed glyphs after a bullet.
+  assert.deepEqual(find(src, pdf.slice(1), 2), { text: item, kind: 'exact' });
+  assert.deepEqual(find(src, 'vening route: both school', 3), { text: 'Evening route: both school', kind: 'exact' });
+});
+
+test('a selection that ends at the end of the item text ends there', () => {
+  const src = String.raw`\begin{itemize}
+    \item Morning route: lunch breaks scheduled between the long climbs and steep descents.
+    \item Evening route: both school classes at the lake shore.
+\end{itemize}
+`;
+  assert.deepEqual(find(src, 'long climbs and\nsteep descents.', 2), { text: 'long climbs and steep descents.', kind: 'exact' });
+  assert.deepEqual(find(src, 'long climbs and\nsteep descent', 2), { text: 'long climbs and steep descents', kind: 'exact' });
+  assert.deepEqual(find(src, 'at the lake shore.', 3), { text: 'at the lake shore.', kind: 'exact' });
+});
+
+test('a selection inside a hyphenated compound keeps to its part', () => {
+  const src = 'a short-distance walk\n';
+  assert.deepEqual(find(src, 'distance walk'), { text: 'distance walk', kind: 'exact' });
+});
+
 // ------------------------------------------------------- source to PDF
 
 /**

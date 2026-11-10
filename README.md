@@ -126,6 +126,9 @@ must not be exposed to the open internet.
   them, despite ligatures, hyphenation and markup. When the words cannot be
   found exactly, the composer says that the match is approximate or covers
   whole lines.
+  A selection that starts or ends inside a word takes in the whole word,
+  because PDF.js's text layer can place characters a few points off the
+  printed glyphs, and a drag from the first printed letter can miss it.
   Nothing is written into the .tex files: threads live beside them, stay
   attached to their words while people type, are committed with every label
   (`.texwerk/comments.json`), and come along on request as **Project as .zip

@@ -223,8 +223,10 @@ export function matchPdfSelection(source: string, selected: string, firstLine: n
   const skeleton = sourceSkeleton(source, winFrom, winTo);
   const wanted = pdfSkeleton(selected);
   const nearIndex = Math.max(0, skeleton.from.findIndex((f) => f >= near));
-  const result = (a: number, b: number, kind: MatchKind): SourceMatch =>
-    ({ ...widen(source, selected, skeleton.from[a], skeleton.to[b - 1]), kind });
+  const result = (a: number, b: number, kind: MatchKind): SourceMatch => {
+    const words = toWords(source, skeleton.from[a], skeleton.to[b - 1]);
+    return { ...widen(source, selected, words.from, words.to), kind };
+  };
 
   const found = findSkeleton(wanted, skeleton.text, nearIndex);
   if (found) return result(found.start, found.end, found.kind);
@@ -239,6 +241,22 @@ export function matchPdfSelection(source: string, selected: string, firstLine: n
     while (lo > 1 && to <= from) { lo--; from = starts[lo - 1]; to = lineEnd(hi); while (to > from && /\s/.test(source[to - 1])) to--; }
   }
   return { from, to, kind: 'lines' };
+}
+
+const WORD_CHAR = /[\p{L}\p{N}]/u;
+
+/**
+ * Whole words at both ends. PDF.js's text layer spaces the characters of a
+ * run with a browser font, so they can sit a few points off the printed
+ * glyphs: a drag that starts on the first printed letter of a word can begin
+ * the selection at the second one ("orning" for "Morning"), most of all after
+ * a list bullet. A selection that starts or ends inside a word is therefore
+ * taken to mean the whole word.
+ */
+function toWords(source: string, from: number, to: number): { from: number; to: number } {
+  while (from > 0 && WORD_CHAR.test(source[from - 1]) && WORD_CHAR.test(source[from])) from--;
+  while (to < source.length && WORD_CHAR.test(source[to]) && WORD_CHAR.test(source[to - 1])) to++;
+  return { from, to };
 }
 
 /**
