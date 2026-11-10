@@ -26,6 +26,7 @@
   --green: #4a7a34;
   --yellow: #93650f;
   --danger: #b0403c;
+  --unread: #e0620d;
   --purple: #77588f;
   --cyan: #2f6a78;
   /* Text on a solid accent or author colour (badges, counters, bubbles). */
@@ -73,6 +74,7 @@
   --green: #9db57f;
   --yellow: #d1ad6c;
   --danger: #d6806f;
+  --unread: #f39237;
   --purple: #b29fbf;
   --cyan: #8fb5ba;
   --on-color: #201f1d;
@@ -107,6 +109,7 @@
   --green: #9ece6a;
   --yellow: #e0af68;
   --danger: #f7768e;
+  --unread: #ff9e64;
   --purple: #bb9af7;
   --cyan: #7dcfff;
   --on-color: #16161e;
@@ -450,7 +453,7 @@ code { color: var(--cyan); }
   border-bottom: 2px solid color-mix(in srgb, var(--c-ink) var(--comment-line), transparent);
 }
 /* In the gutter: a speech bubble per line, like a breakpoint. */
-.cm-comment-gutter { width: 18px; }
+.cm-comment-gutter { width: 20px; }
 .cm-comment-gutter .cm-gutterElement { display: flex; align-items: flex-start; justify-content: center; padding: 0 !important; }
 .cm-comment-marker { margin-top: 6px !important; }
 .cm-comment-marker {
@@ -475,17 +478,18 @@ code { color: var(--cyan); }
   border-right: 4px solid transparent;
 }
 .cm-comment-marker:hover { filter: brightness(1.2); outline: 1px solid var(--text); }
-/* New messages by others: a dot on the bubble's corner. */
+/* New messages by others: a notification badge on the bubble's corner,
+   ringed in the gutter's colour so it stands apart from the bubble. */
 .cm-comment-marker.unread::before {
   content: '';
   position: absolute;
-  top: -3px;
+  top: -4px;
   right: -3px;
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 1px var(--bg);
+  background: var(--unread);
+  box-shadow: 0 0 0 1.5px var(--panel);
 }
 .cm-tooltip.cm-comment-tip-host, .cm-comment-tip { background: transparent !important; border: 0 !important; }
 .cm-comment-tip button { padding: 2px 8px; border-color: var(--yellow); background: var(--panel); color: var(--yellow); font-size: 11px; box-shadow: 0 4px 14px rgb(0 0 0 / calc(50% * var(--shadow-k))); }
@@ -544,11 +548,16 @@ code { color: var(--cyan); }
 .thread-card.selected { border-color: var(--accent); }
 .thread-card.resolved { opacity: .55; }
 .thread-card.resolved:hover { opacity: .8; }
-/* Threads and messages this name has not seen. */
-.unread-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--accent); }
-.thread-card.unread .thread-where { color: var(--text); font-weight: 700; }
-.msg.unread { box-shadow: inset 2px 0 var(--accent); padding-left: 6px; }
-.msg-new { color: var(--accent); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+/* Threads and messages this name has not seen, all in the one --unread
+   colour: a frame and tint on the card (and on the popup that opened it),
+   a line beside each new message. */
+.thread-card.unread, .comment-popover.unread {
+  border-color: var(--unread);
+  background: color-mix(in srgb, var(--unread) 7%, var(--panel));
+  box-shadow: 0 0 0 1px var(--unread);
+}
+.comment-popover.unread { box-shadow: 0 0 0 1px var(--unread), 0 14px 38px rgb(0 0 0 / calc(55% * var(--shadow-k))); }
+.msg.unread { box-shadow: inset 3px 0 var(--unread); padding-left: 8px; }
 
 .pdf-comment-mark {
   position: absolute;
@@ -1085,7 +1094,7 @@ button.busy { opacity: .75; cursor: progress; }
 .chat-choice.active, .chat-choice:hover { background: var(--panel-2); }
 .chat-choice .hint { color: var(--muted); font-size: 10.5px; }
 .viewer-tabs .tab .count.mention { background: var(--yellow); color: var(--on-color); }
-.viewer-tabs .tab .count.unread { background: var(--accent); color: var(--on-color); }
+.viewer-tabs .tab .count.unread { background: var(--unread); color: var(--on-color); }
 
 /* Trash dialogs */
 .trash-list { max-height: 50vh; overflow: auto; margin: 8px 0; }

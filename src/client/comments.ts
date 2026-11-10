@@ -167,7 +167,7 @@ export class Comments {
       const t = this.threads.find((x) => x.id === this.popoverThread);
       // A reply arriving in the open thread is seen right there.
       if (t && this.unread(t) && !document.hidden) { this.markRead(t.id); return; }
-      if (t) this.popover?.replaceChildren(...this.threadBody(t, true));
+      if (t) { this.popover?.replaceChildren(...this.threadBody(t, true)); this.markPopover(); }
       else this.closePopover();
     }
     this.opts.onChange();
@@ -190,7 +190,6 @@ export class Comments {
     const unread = new Set(unreadMessages(t, this.seen, me.login).map((m) => m.id));
     for (const id of this.shownUnread.get(t.id) ?? []) unread.add(id);
     const head = h('div', { class: 'thread-head' },
-      this.unread(t) ? h('span', { class: 'unread-dot', title: 'New messages' }) : '',
       h('span', { class: 'thread-where', title: 'Go to the text' },
         t.from === null ? `${t.path} · text deleted` : `${t.path}:${t.line}`),
       h('span', { class: 'spacer' }),
@@ -231,7 +230,6 @@ export class Comments {
           h('span', { class: 'msg-dot', style: `background:${colorFor(m.login.replace(/:agent$/, ''))}` }),
           h('span', { class: 'msg-author' }, m.author),
           h('span', { class: 'msg-time', title: new Date(m.ts).toLocaleString() }, `${formatTime(m.ts)}${m.edited ? ' · edited' : ''}`),
-          isNew ? h('span', { class: 'msg-new' }, 'new') : '',
           h('span', { class: 'spacer' }), tools),
         text);
     });
@@ -279,6 +277,12 @@ export class Comments {
     if (this.popoverThread === id && this.popover) { this.position(this.popover, rect, 'beside'); return; }
     this.popoverThread = id;
     this.placePopover(this.threadBody(t, true), rect);
+    this.markPopover();
+  }
+
+  /** The popup of a thread that had new messages when it opened looks like an unread card. */
+  private markPopover(): void {
+    this.popover?.classList.toggle('unread', Boolean(this.popoverThread && this.shownUnread.has(this.popoverThread)));
   }
 
   /**

@@ -135,10 +135,11 @@ must not be exposed to the open internet.
   + comments** or **Compiled PDF with comments** (real PDF sticky notes).
   Agents see them in `.texwerk/comments.md` and use `node .texwerk/tw
   comments | comment | reply | resolve`.
-  New comments and replies by others (people, or agents, one's own too) are marked: a dot
-  and a bold heading on the thread in the list, "new" on each unseen
-  message, a dot on the gutter bubble, and the number of such threads on the
-  Comments tab. A thread counts as read once it is opened in the popup or
+  New comments and replies by others (people, or agents, one's own too) are marked: the
+  thread's card in the list gets an accent frame and tint, each unseen
+  message an accent line on its left, the gutter bubble turns accent with a
+  halo, and the Comments tab shows the number of such threads. A popup opened
+  on such a thread keeps the frame and the lines while it stays open. A thread counts as read once it is opened in the popup or
   selected in the list, and **Mark all read** reads them all. Resolved
   threads count as read. The server keeps what each name has seen in
   `.texwerk/read-state.json` (name, then thread, then the time of the newest

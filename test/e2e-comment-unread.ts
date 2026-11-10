@@ -6,7 +6,7 @@
  * Creates a throwaway project with a comment by Bob, then opens it as Ann:
  * - Ann's first visit starts with everything read;
  * - Bob's new comment and his reply make two threads unread (count on the
- *   Comments tab, marked cards and messages, dots on the gutter bubbles),
+ *   Comments tab, marked cards and messages, accent gutter bubbles),
  *   Ann's own reply does not;
  * - selecting a thread in the list reads it;
  * - a second browser of Ann's sees the same state, and its "Mark all read"
@@ -80,7 +80,7 @@ check('another name has its own state', await state(c), { badge: '1', unreadCard
 // Popup opening marks read.
 await c.evaluate(() => (document.querySelector('.cm-comment-marker') as HTMLElement).dispatchEvent(new MouseEvent('mousedown', { bubbles: true })));
 await c.waitForTimeout(800);
-check('opening the popup reads the thread and marks its new message', [await state(c), await c.evaluate(() => [...document.querySelectorAll('.comment-popover .msg.unread .msg-text')].map((m) => m.textContent))], [{ badge: '0', unreadCards: [], newMsgs: ['Bob again'], gutterDots: 0, markAllDisabled: true }, ['Bob again']]);
+check('opening the popup reads the thread and marks its new message', [await state(c), await c.evaluate(() => [...document.querySelectorAll('.comment-popover.unread .msg.unread .msg-text')].map((m) => m.textContent))], [{ badge: '0', unreadCards: [], newMsgs: ['Bob again'], gutterDots: 0, markAllDisabled: true }, ['Bob again']]);
 } finally {
   await browser.close();
   await api('POST', `/api/projects/delete${q}`).catch(() => undefined);
