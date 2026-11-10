@@ -640,7 +640,7 @@ export async function renderEditor(app: HTMLElement, project: string, meInfo: Me
           const quote = ytext.toString().slice(from, to);
           comments.compose(path, from, to, quote, rect, () => current?.view.focus());
         },
-        onOpenThread: (ids, line) => comments.openThread(ids[0], line, 'line'),
+        onOpenThread: (ids, rect) => comments.openThread(ids[0], rect),
         onPlainClick: () => comments.closePopover(),
       });
       currentPath = path;

@@ -214,12 +214,11 @@ export interface CodeEditorOptions {
   /** Start a comment on the selection. */
   onComment?: (from: number, to: number, rect: DOMRect) => void;
   /**
-   * Open the given thread(s) without taking the focus: a click in commented
-   * text (the caret goes there as usual) or on the gutter's speech bubble.
-   * `line` is the clicked line, which the thread must not cover; its left
-   * edge is where the click was.
+   * Open the given thread(s) without taking the focus, shown next to `rect`:
+   * a click in commented text (the caret goes there as usual, `rect` is the
+   * clicked piece of the range) or on the gutter's speech bubble.
    */
-  onOpenThread?: (ids: string[], line: DOMRect) => void;
+  onOpenThread?: (ids: string[], rect: DOMRect) => void;
   /** A click in text without a comment. */
   onPlainClick?: () => void;
 }
@@ -262,6 +261,8 @@ export class CodeEditor {
           ]),
         ]
       : [];
+    /** Where the left button went down, for telling a click from a drag. */
+    let press: { x: number; y: number } | null = null;
     const state = EditorState.create({
       doc: opts.ytext.toString(),
       extensions: [
@@ -293,14 +294,24 @@ export class CodeEditor {
         EditorView.domEventHandlers({
           // A click (not a drag) in commented text also shows its thread.
           // The caret stays where the click put it, and so does the focus.
-          click: (e, view) => {
-            if (e.button !== 0 || e.detail > 1) return false;
-            const range = (e.target as HTMLElement).closest('.cm-comment-range') as HTMLElement | null;
-            if (!range || !view.state.selection.main.empty) { opts.onPlainClick?.(); return false; }
-            const caret = view.coordsAtPos(view.state.selection.main.head);
-            const top = caret?.top ?? e.clientY - 8;
-            const bottom = caret?.bottom ?? e.clientY + 8;
-            opts.onOpenThread?.([range.dataset.thread!], new DOMRect(e.clientX, top, 0, bottom - top));
+          // Mouse down and up rather than "click": the first click into an
+          // unfocused editor redraws the clicked line, and the browser then
+          // fires no click event.
+          mousedown: (e) => {
+            press = e.button === 0 && e.detail === 1 ? { x: e.clientX, y: e.clientY } : null;
+            return false;
+          },
+          mouseup: (e, view) => {
+            const at = press;
+            press = null;
+            if (!at || Math.hypot(e.clientX - at.x, e.clientY - at.y) > 4) return false;
+            // Once CodeMirror has placed the caret.
+            setTimeout(() => {
+              const hit = document.elementFromPoint(e.clientX, e.clientY);
+              const range = hit?.closest('.cm-comment-range') as HTMLElement | null;
+              if (!range || !view.state.selection.main.empty) { opts.onPlainClick?.(); return; }
+              opts.onOpenThread?.([range.dataset.thread!], range.getBoundingClientRect());
+            }, 0);
             return false;
           },
           // Double-click still selects the word, and also shows it in the PDF.
@@ -344,12 +355,7 @@ export class CodeEditor {
       const marker = (e.target as HTMLElement).closest('.cm-comment-marker') as HTMLElement | null;
       if (!marker) return;
       e.preventDefault();
-      const r = marker.getBoundingClientRect();
-      const block = this.view.lineBlockAtHeight(r.top + r.height / 2 - this.view.documentTop);
-      const content = this.view.contentDOM.getBoundingClientRect();
-      // Below the whole commented line, so its text stays in view.
-      const top = this.view.documentTop + block.top;
-      opts.onOpenThread?.(marker.dataset.threads!.split(' '), new DOMRect(content.left, top, 0, block.height));
+      opts.onOpenThread?.(marker.dataset.threads!.split(' '), marker.getBoundingClientRect());
     });
   }
 

@@ -196,18 +196,18 @@ export class Comments {
   // ------------------------------------------------------------ popover
 
   /**
-   * Show a thread: beside `rect` (a PDF pin), or, with `line`, below or
-   * above that line of the editor, so the line stays in view. The focus
-   * stays where it is; the reply box takes it when clicked.
+   * Show a thread to the right of `rect` (the clicked commented text, a
+   * gutter bubble or a PDF pin). The focus stays where it is; the reply box
+   * takes it when clicked.
    */
-  openThread(id: string, rect: DOMRect, placement: 'beside' | 'line' = 'beside'): void {
+  openThread(id: string, rect: DOMRect): void {
     const t = this.threads.find((x) => x.id === id);
     if (!t) return;
     this.select(id);
     // The same thread again (another line of it): move it, keeping a reply being typed.
-    if (this.popoverThread === id && this.popover) { this.position(this.popover, rect, placement); return; }
+    if (this.popoverThread === id && this.popover) { this.position(this.popover, rect, 'beside'); return; }
     this.popoverThread = id;
-    this.placePopover(this.threadBody(t, true), rect, placement);
+    this.placePopover(this.threadBody(t, true), rect);
   }
 
   /**
