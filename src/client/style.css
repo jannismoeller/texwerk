@@ -7,10 +7,12 @@
 }
 
 /* DeckWerk's chrome: terminal-inspired, monospace UI, hard right angles.
-   Two colour schemes, chosen per browser (theme.ts sets data-theme on
-   <html>). Light, the default, is dark grey ink on near-white paper with
-   muted accents. Dark is the Tokyo Night palette. The rules below the
-   palettes take every colour from these variables, so one rule serves both. */
+   Colour themes, chosen per browser (theme.ts sets data-theme on <html> and
+   lists the themes). Light, the default, is dark grey ink on near-white
+   paper with muted accents. Dark is warm dark greys with off-white text and
+   low-saturation accents. Tokyo Night is that palette. The rules below the
+   palettes take every colour from these variables, so one rule serves all.
+   A new theme is one more block here, overriding every variable of :root. */
 :root {
   color-scheme: light;
   --bg: #fbfaf8;
@@ -59,6 +61,40 @@
   --mono: "Monaspace Krypton", ui-monospace, monospace;
 }
 :root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #201f1d;
+  --panel: #282725;
+  --panel-2: #302e2b;
+  --line: #3b3936;
+  --text: #d4cfc6;
+  --muted: #8a847a;
+  --dim: #a7a196;
+  --accent: #86a9b0;
+  --green: #9db57f;
+  --yellow: #d1ad6c;
+  --danger: #d6806f;
+  --purple: #b29fbf;
+  --cyan: #8fb5ba;
+  --on-color: #201f1d;
+  --viewer-bg: #181715;
+  --checker-a: #282725;
+  --checker-b: #201f1d;
+  --code-bg: #1a1918;
+  --overlay: rgb(10 9 8 / 70%);
+  --overlay-strong: rgb(10 9 8 / 76%);
+  --drop-overlay: rgb(32 31 29 / 82%);
+  --shadow-k: .85;
+  --active-line: rgb(255 255 255 / 3%);
+  /* The pastel author colours, a little darker, so they do not glare. */
+  --author-ink: 88%;
+  --comment-fill: 17%;
+  --comment-fill-pdf: 26%;
+  --comment-fill-hot: 45%;
+  --comment-line: 70%;
+  --author-fill: 15%;
+  --caret-filter: none;
+}
+:root[data-theme="tokyo-night"] {
   color-scheme: dark;
   --bg: #16161e;
   --panel: #1a1b26;
@@ -316,6 +352,11 @@ code { color: var(--cyan); }
 .icon-svg { display: inline-flex; vertical-align: -2px; }
 .toolbar .side-toggle { padding: 3px 6px; color: var(--dim); }
 .toolbar .side-toggle.on { border-color: transparent; color: var(--accent); }
+.toolbar .theme-btn { padding: 3px 6px; color: var(--dim); }
+.menu .theme-item { display: flex; align-items: center; gap: 8px; min-width: 170px; }
+.menu .theme-item .swatch { display: inline-flex; width: 26px; height: 14px; border: 1px solid var(--line); }
+.menu .theme-item .swatch i { flex: 1; }
+.menu .theme-item .icon-svg { margin-left: auto; color: var(--accent); }
 
 /* ---------------------------------------------------------------- tree */
 
@@ -865,7 +906,7 @@ button.busy { opacity: .75; cursor: progress; }
 
 @media (max-width: 900px) {
   .pane-toggle { display: inline-block; }
-  .toolbar > button:not(.pane-toggle):not(.primary), .toolbar .presence { display: none; }
+  .toolbar > button:not(.pane-toggle):not(.primary):not(.theme-btn), .toolbar .presence { display: none; }
   /* One pane at a time: a flex row, so hidden panes leave no empty columns. */
   .body { display: flex; }
   .body > .pane, .body > .history { flex: 1; min-width: 0; }

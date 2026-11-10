@@ -15,7 +15,7 @@ import type { AuthorInfo } from '@shared/protocol.ts';
 import type { CommentThread } from '@shared/comments.ts';
 import { api, ApiError, copyText, dialog, h, icon, initials, menu, menuAt, storedName, storeName, toast, withName } from './ui.ts';
 import { showPicker, showShareDialog, type Me } from './picker.ts';
-import { currentTheme, setTheme } from './theme.ts';
+import { currentTheme, onThemeChange, setTheme, themeInfo, THEMES } from './theme.ts';
 import { SidePanel } from './sidePanel.ts';
 
 /**
@@ -66,6 +66,22 @@ export async function renderEditor(app: HTMLElement, project: string, meInfo: Me
   const gitBtn = h('button', { title: 'Git remote, push and pull' }, 'Git…');
   const agentBtn = h('button', { title: 'Mirror this project to your computer for your editor or agent' }, 'Agent…');
   const downloadBtn = h('button', { title: 'Download' }, 'Download ▾');
+  // The colour theme, per browser: a sun or a moon, and a menu of themes.
+  const themeBtn = h('button', { class: 'ghost icon theme-btn' });
+  const showTheme = () => {
+    const info = themeInfo();
+    themeBtn.replaceChildren(icon(info.dark ? 'moon' : 'sun'));
+    themeBtn.title = `Colour theme: ${info.label} (this browser only)`;
+  };
+  showTheme();
+  onThemeChange(showTheme);
+  themeBtn.addEventListener('click', () => menu(themeBtn, [
+    h('div', { class: 'menu-head' }, 'Theme'),
+    ...THEMES.map((t) => h('button', { class: 'theme-item', onclick: () => setTheme(t.id) },
+      h('span', { class: 'swatch' }, ...t.swatch.map((c) => h('i', { style: `background:${c}` }))),
+      t.label,
+      t.id === currentTheme() ? icon('check') : '')),
+  ]));
   const shareBtn = h('button', { title: 'Who can open and edit this project' }, 'Share…');
   // Narrow windows show one of editor and viewer at a time.
   const paneToggle = h('button', { class: 'pane-toggle', title: 'Switch between the editor and the PDF' }, 'PDF');
@@ -89,7 +105,7 @@ export async function renderEditor(app: HTMLElement, project: string, meInfo: Me
     h('span', { class: 'spacer' }),
     presenceEl,
     h('span', { class: 'sep' }),
-    historyBtn, labelBtn, gitBtn, agentBtn, ...(access ? [shareBtn] : []), downloadBtn, paneToggle);
+    historyBtn, labelBtn, gitBtn, agentBtn, ...(access ? [shareBtn] : []), downloadBtn, themeBtn, paneToggle);
 
   const statusConn = h('span', {}, h('span', { class: 'dot' }), 'connecting');
   const statusCompile = h('span', {});
@@ -161,13 +177,6 @@ export async function renderEditor(app: HTMLElement, project: string, meInfo: Me
     try { localStorage.setItem('texwerk-vim', vimOn ? '1' : '0'); } catch { /* ignore */ }
     current?.setVim(vimOn);
     current?.view.focus();
-  });
-  // Dark colour scheme, per browser; light unless turned on.
-  const darkBtn = h('button', { class: `ghost icon authors-toggle${currentTheme() === 'dark' ? ' on' : ''}`, title: 'Dark colour scheme (this browser only)' }, 'Dark');
-  darkBtn.addEventListener('click', () => {
-    const dark = currentTheme() !== 'dark';
-    darkBtn.classList.toggle('on', dark);
-    setTheme(dark ? 'dark' : 'light');
   });
   authorsMap.observe(() => scheduleAuthors());
   const editorHost = h('div', { class: 'editor-host' });
@@ -612,8 +621,7 @@ export async function renderEditor(app: HTMLElement, project: string, meInfo: Me
         authorsLegend,
         authorsBtn,
         spellBtn,
-        vimBtn,
-        darkBtn);
+        vimBtn);
       updateAuthors();
       tree.select(path);
       const url = new URL(location.href);

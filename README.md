@@ -125,6 +125,9 @@ must not be exposed to the open internet.
   the PDF stays in view on the right. The sidebar button left of the project
   name, or Ctrl+Alt+B, hides the whole panel and gives its width to the
   editor and the PDF. The browser remembers the tab and whether the panel shows.
+- **Themes.** The sun or moon at the right end of the top bar picks the
+  colour theme for this browser: Light, Dark (warm dark greys) or Tokyo Night.
+  The PDF pages stay white in every theme.
 - **Chat.** The **Chat** tab next to **Comments** is a running conversation
   for the whole project, open to view-only people too. Enter sends,
   Shift+Enter starts a new line, `@` completes the names of the people here
