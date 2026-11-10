@@ -694,3 +694,63 @@ test('deleting an open project\'s folder on disk does not crash the server', asy
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('read state: marks merge by the later time per thread, nonsense is ignored', async () => {
+  const { mergeSeen } = await import('../src/shared/readState.ts');
+  // Two tabs of one name: one saw thread a up to 200, the other saw a only up to 100 but also b.
+  const first = mergeSeen({}, { a: 200 });
+  assert.deepEqual(first, { merged: { a: 200 }, changed: true });
+  const second = mergeSeen(first.merged, { a: 100, b: 50 });
+  assert.deepEqual(second, { merged: { a: 200, b: 50 }, changed: true });
+  assert.deepEqual(mergeSeen(second.merged, { a: 150 }), { merged: { a: 200, b: 50 }, changed: false });
+  assert.deepEqual(mergeSeen({}, { a: 'x', b: -1, c: Infinity, d: null, '': 5, e: '300' }).merged, { e: 300 });
+});
+
+test('read state: a thread is unread for messages by others newer than what was seen', async () => {
+  const { unreadMessages } = await import('../src/shared/readState.ts');
+  const msg = (id: string, login: string, ts: number, author = login) => ({ id, author, login, ts, text: id });
+  const t = {
+    id: 't1', path: 'main.tex', from: 0, to: 1, line: 1, quote: 'x', author: 'Ann', login: 'guest:ann', createdAt: 100, resolved: false,
+    messages: [msg('m1', 'guest:ann', 100), msg('m2', 'guest:bob', 200), msg('m3', 'guest:ann', 300, 'Ann \u00b7 agent'), msg('m4', 'guest:ann', 400)],
+  };
+  assert.deepEqual(unreadMessages(t, null, 'guest:ann'), [], 'nothing before the read state arrives');
+  assert.deepEqual(unreadMessages(t, {}, 'guest:ann').map((m) => m.id), ['m2', 'm3'], 'never seen: every message by someone else, Ann\'s own agent included');
+  assert.deepEqual(unreadMessages(t, { t1: 200 }, 'guest:ann').map((m) => m.id), ['m3']);
+  assert.deepEqual(unreadMessages(t, { t1: 400 }, 'guest:ann'), []);
+  assert.deepEqual(unreadMessages(t, {}, 'guest:bob').map((m) => m.id), ['m1', 'm3', 'm4']);
+  assert.deepEqual(unreadMessages({ ...t, resolved: true }, {}, 'guest:ann'), [], 'a resolved thread counts as read');
+});
+
+test('read state: a new name starts with everything read once, then it is kept and survives a restart', async () => {
+  const { mkdir } = await import('node:fs/promises');
+  const { Project } = await import('../src/server/project.ts');
+  const root = await mkdtemp(join(tmpdir(), 'texwerk-read-'));
+  const dir = join(root, 'Paper');
+  await mkdir(dir);
+  await writeFile(join(dir, 'main.tex'), 'Hello world, this is a paper.\n');
+  try {
+    const p = new Project('Paper', dir);
+    await p.open();
+    const old = p.createComment('main.tex', 0, 5, 'An old comment', 'Bob', 'guest:bob');
+    const seen = p.seenBy('guest:ann');
+    assert.ok(seen[old] > 0, 'an existing thread starts read for a new name');
+    const later = p.createComment('main.tex', 6, 11, 'A new comment', 'Bob', 'guest:bob');
+    assert.equal(p.seenBy('guest:ann')[later], undefined, 'a thread created afterwards is not read');
+    // Two tabs mark the same thread at different times, in either order.
+    p.markSeen('guest:ann', { [later]: 500 });
+    p.markSeen('guest:ann', { [later]: 300 });
+    assert.equal(p.seenBy('guest:ann')[later], 500);
+    await p.close();
+    const file = JSON.parse(await readFile(join(dir, '.texwerk', 'read-state.json'), 'utf8'));
+    assert.equal(file['guest:ann'][later], 500);
+    const q = new Project('Paper', dir);
+    await q.open();
+    assert.equal(q.seenBy('guest:ann')[later], 500, 'kept across a restart');
+    // "Mark all read": every thread up to its newest message (later than the 500 above).
+    const all = q.markSeen('guest:ann', 'all');
+    await q.close();
+    assert.ok(all[old] > 0 && all[later] > 500);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

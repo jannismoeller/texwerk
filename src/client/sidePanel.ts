@@ -29,6 +29,7 @@ export class SidePanel {
   private tab: SideTab = 'files';
   private hiddenNow = false;
   private commentCount = 0;
+  private commentUnread = 0;
   private chatUnread = 0;
   private chatMentioned = false;
 
@@ -73,9 +74,11 @@ export class SidePanel {
     this.setHidden(!this.hiddenNow);
   }
 
-  setCommentCount(open: number): void {
-    if (open === this.commentCount) return;
+  /** Open threads, and threads with messages this name has not seen. */
+  setCommentCount(open: number, unread: number): void {
+    if (open === this.commentCount && unread === this.commentUnread) return;
     this.commentCount = open;
+    this.commentUnread = unread;
     this.renderTabs();
   }
 
@@ -106,7 +109,9 @@ export class SidePanel {
     };
     this.tabs.replaceChildren(
       tab('files', 'Files'),
-      tab('comments', 'Comments', this.commentCount ? h('span', { class: 'count' }, String(this.commentCount)) : null),
+      tab('comments', 'Comments',
+        this.commentCount ? h('span', { class: 'count', title: 'Open threads' }, String(this.commentCount)) : null,
+        this.commentUnread ? h('span', { class: 'count unread', title: 'Threads with new messages' }, String(this.commentUnread)) : null),
       tab('chat', 'Chat', this.chatUnread ? h('span', { class: `count${this.chatMentioned ? ' mention' : ''}`, title: this.chatMentioned ? 'Unread, and you were mentioned' : 'Unread messages' }, String(this.chatUnread)) : null),
     );
   }

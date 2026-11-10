@@ -715,7 +715,7 @@ export async function startServer(options: ServerOptions) {
     const role = await requireRole(identity, projectParam ?? '', 'view');
     const project = await getProject(projectParam);
     // Commenting is open to viewers, like "commenter" in Google Docs.
-    const reads = method === 'GET' || ['/api/compile', '/api/synctex/edit', '/api/synctex/view', '/api/synctex/lines', '/api/comments', '/api/chat'].includes(path);
+    const reads = method === 'GET' || ['/api/compile', '/api/synctex/edit', '/api/synctex/view', '/api/synctex/lines', '/api/comments', '/api/comments/read', '/api/chat'].includes(path);
     if (!reads && role === 'view') throw new HttpError(403, 'you have view-only access to this project');
     const bodyPath = (p: unknown) => {
       const clean = cleanPath(String(p ?? ''));
@@ -816,6 +816,14 @@ export async function startServer(options: ServerOptions) {
 
     if (path === '/api/comments' && method === 'GET') {
       return json(response, 200, { threads: sortThreads(allThreads(project.doc)) });
+    }
+
+    // What this person has seen of the comments: { seen: { id: newest message time } } or { all: true }.
+    if (path === '/api/comments/read' && method === 'POST') {
+      const body = await readJson<{ seen?: Record<string, unknown>; all?: boolean }>(request);
+      const seen = body.all === true ? 'all' : body.seen && typeof body.seen === 'object' && !Array.isArray(body.seen) ? body.seen : null;
+      if (!seen) throw new HttpError(400, 'say which threads were seen');
+      return json(response, 200, { threads: project.markSeen(identity.login, seen) });
     }
 
     if (path === '/api/comments' && method === 'POST') {

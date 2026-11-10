@@ -100,7 +100,13 @@ export type ServerEvent =
    * moved, and the reconnect resumes the same document (same epoch).
    */
   | { t: 'moved'; to: string }
-  | { t: 'notice'; message: string };
+  | { t: 'notice'; message: string }
+  /**
+   * Which comment threads this connection's name has seen (thread id ->
+   * newest message time seen, src/shared/readState.ts). Sent after `hello`
+   * and whenever that name marks threads read, in any tab or device.
+   */
+  | { t: 'readState'; threads: Record<string, number> };
 
 export interface ProjectSettings {
   mainFile: string;

@@ -135,6 +135,17 @@ must not be exposed to the open internet.
   + comments** or **Compiled PDF with comments** (real PDF sticky notes).
   Agents see them in `.texwerk/comments.md` and use `node .texwerk/tw
   comments | comment | reply | resolve`.
+  New comments and replies by others (people, or agents, one's own too) are marked: a dot
+  and a bold heading on the thread in the list, "new" on each unseen
+  message, a dot on the gutter bubble, and the number of such threads on the
+  Comments tab. A thread counts as read once it is opened in the popup or
+  selected in the list, and **Mark all read** reads them all. Resolved
+  threads count as read. The server keeps what each name has seen in
+  `.texwerk/read-state.json` (name, then thread, then the time of the newest
+  message seen), so it is the same in every browser and device of that name
+  and survives a restart. Without `--access` the name is the one typed in
+  the status bar, so another name has its own state. A name the project has
+  not seen before starts with every existing thread read.
 - **Side panel.** Files, Comments and Chat are tabs in the left column, so
   the PDF stays in view on the right. The sidebar button left of the project
   name, or Ctrl+Alt+B, hides the whole panel and gives its width to the
@@ -298,6 +309,7 @@ node test/e2e-latex-editing.ts <origin> <projectsRoot>          # completion, En
 node test/e2e-links-and-sync.ts <origin>                        # comment links, double-click to PDF, lineno fix
 node test/e2e-pdf-comment.ts <origin>                           # a comment started from text selected in the PDF
 node test/e2e-pdf-pins.ts <origin>                              # comment pins and marks on their words in the PDF
+node test/e2e-comment-unread.ts <origin>                        # unread comments across browsers and names
 MODE=all node test/stress-bridge.ts <origin> <project> <mirrorDir> 8
 ```
 

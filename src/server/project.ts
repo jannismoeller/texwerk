@@ -16,6 +16,7 @@ import {
 } from '../shared/protocol.ts';
 import { setYText } from '../shared/textDiff.ts';
 import { allThreads, type CommentMessage, type CommentThread, type ThreadMap } from '../shared/comments.ts';
+import { allSeen, mergeSeen, type SeenThreads } from '../shared/readState.ts';
 import { chatArray, cleanMessage, findMentions, fromJsonl, toJsonl, type ChatMessage, type ChatRef } from '../shared/chat.ts';
 import { authorRuns } from '../shared/provenance.ts';
 import { isMassDeletion, MASS_DELETION_WINDOW_MS } from '../shared/deletionGuard.ts';
@@ -195,6 +196,7 @@ export class Project {
     }
     await this.restoreLastCompile();
     await this.loadComments();
+    await this.loadReadState();
     await this.loadChat();
 
     this.doc.on('update', (update: Uint8Array, origin: unknown) => {
@@ -328,6 +330,7 @@ export class Project {
     syncProtocol.writeSyncStep1(enc, this.doc);
     conn.ws.send(encoding.toUint8Array(enc));
     if (this.movedTo) this.sendEvent(conn, { t: 'moved', to: this.movedTo });
+    if (!conn.bridge) this.sendEvent(conn, { t: 'readState', threads: this.seenBy(conn.identity.login) });
     const states = [...this.awareness.getStates().keys()];
     if (states.length) {
       const aw = encoding.createEncoder();
@@ -975,6 +978,79 @@ export class Project {
     const tmp = `${this.commentsFile()}.${process.pid}.tmp`;
     writeFileSync(tmp, `${JSON.stringify(threads, null, 2)}\n`);
     renameSync(tmp, this.commentsFile());
+  }
+
+  // -------------------------------------------------------------- read state
+
+  /** login -> thread id -> newest message time seen (src/shared/readState.ts). */
+  private readState: Record<string, SeenThreads> = {};
+
+  private readStateFile(): string {
+    return join(this.dir, '.texwerk', 'read-state.json');
+  }
+
+  private async loadReadState(): Promise<void> {
+    if (!existsSync(this.readStateFile())) return;
+    try {
+      const raw = JSON.parse(await readFile(this.readStateFile(), 'utf8')) as unknown;
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('not an object');
+      for (const [login, seen] of Object.entries(raw as Record<string, unknown>)) {
+        if (seen && typeof seen === 'object' && !Array.isArray(seen)) this.readState[login] = mergeSeen({}, seen as Record<string, unknown>).merged;
+      }
+    } catch (err) {
+      // Everyone then starts over with everything read, which loses nothing.
+      console.error(`[${this.name}] read-state.json unreadable, starting it over:`, (err as Error).message);
+    }
+  }
+
+  /**
+   * Written whole to a temporary file and renamed over the old one, so a
+   * crash leaves the old or the new file, never half of one. Every change
+   * goes through the in-memory state first (one process, one event loop),
+   * so writes from several tabs cannot overwrite each other's marks.
+   */
+  private saveReadState(): void {
+    const ids = new Set(this.comments.keys());
+    const out: Record<string, SeenThreads> = {};
+    for (const [login, seen] of Object.entries(this.readState)) {
+      // Deleted threads need no entry.
+      out[login] = Object.fromEntries(Object.entries(seen).filter(([id]) => ids.has(id)));
+    }
+    try {
+      mkdirSync(join(this.dir, '.texwerk'), { recursive: true });
+      const tmp = `${this.readStateFile()}.${process.pid}.tmp`;
+      writeFileSync(tmp, `${JSON.stringify(out, null, 1)}\n`);
+      renameSync(tmp, this.readStateFile());
+    } catch (err) {
+      console.error(`[${this.name}] could not save read-state.json:`, (err as Error).message);
+    }
+  }
+
+  /**
+   * What `login` has seen. A name the project has never seen before starts
+   * with every existing thread read, once; from then on its state is kept.
+   */
+  seenBy(login: string): SeenThreads {
+    let seen = this.readState[login];
+    if (!seen) {
+      seen = allSeen(allThreads(this.doc));
+      this.readState[login] = seen;
+      this.saveReadState();
+    }
+    return seen;
+  }
+
+  /** Fold in what `login` has now seen (or every thread), and tell that name's other tabs. */
+  markSeen(login: string, update: Record<string, unknown> | 'all'): SeenThreads {
+    const { merged, changed } = mergeSeen(this.seenBy(login), update === 'all' ? allSeen(allThreads(this.doc)) : update);
+    if (changed) {
+      this.readState[login] = merged;
+      this.saveReadState();
+      for (const c of this.conns) {
+        if (!c.bridge && c.identity.login === login && c.ws.readyState === 1) this.sendEvent(c, { t: 'readState', threads: merged });
+      }
+    }
+    return merged;
   }
 
   /** Relative positions for [from, to) in `path`, found again by quote if the text moved. */

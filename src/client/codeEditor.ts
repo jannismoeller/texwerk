@@ -55,6 +55,8 @@ export interface CommentMark {
   to: number;
   color: string;
   replies: number;
+  /** Has messages by others this name has not seen. */
+  unread?: boolean;
 }
 
 const setCommentsEffect = StateEffect.define<CommentMark[]>();
@@ -63,18 +65,20 @@ class CommentMarker extends GutterMarker {
   readonly ids: string[];
   readonly color: string;
   readonly count: number;
-  constructor(ids: string[], color: string, count: number) {
+  readonly unread: boolean;
+  constructor(ids: string[], color: string, count: number, unread: boolean) {
     super();
     this.ids = ids;
     this.color = color;
     this.count = count;
+    this.unread = unread;
   }
   eq(other: CommentMarker): boolean {
-    return other.ids.join() === this.ids.join() && other.color === this.color && other.count === this.count;
+    return other.ids.join() === this.ids.join() && other.color === this.color && other.count === this.count && other.unread === this.unread;
   }
   toDOM(): Node {
     const el = document.createElement('span');
-    el.className = 'cm-comment-marker';
+    el.className = `cm-comment-marker${this.unread ? ' unread' : ''}`;
     el.dataset.threads = this.ids.join(' ');
     el.style.setProperty('--c', this.color);
     el.title = this.ids.length > 1 ? `${this.ids.length} comment threads` : `Comment${this.count > 1 ? ` · ${this.count} messages` : ''}`;
@@ -104,7 +108,7 @@ const commentsField = StateField.define<{ marks: CommentMark[]; deco: Decoration
 function build(marks: CommentMark[], state: State) {
   const len = state.doc.length;
   const ranges = [];
-  const byLine = new Map<number, { ids: string[]; color: string; count: number }>();
+  const byLine = new Map<number, { ids: string[]; color: string; count: number; unread: boolean }>();
   for (const m of marks) {
     const from = Math.max(0, Math.min(m.from, len));
     const to = Math.max(from, Math.min(m.to, len));
@@ -115,13 +119,14 @@ function build(marks: CommentMark[], state: State) {
       }).range(from, to));
     }
     const line = state.doc.lineAt(from).from;
-    const entry = byLine.get(line) ?? { ids: [], color: m.color, count: 0 };
+    const entry = byLine.get(line) ?? { ids: [], color: m.color, count: 0, unread: false };
+    if (m.unread) entry.unread = true;
     entry.ids.push(m.id);
     entry.count += m.replies;
     byLine.set(line, entry);
   }
   const gutterMarks = [...byLine.entries()].sort((a, b) => a[0] - b[0])
-    .map(([pos, e]) => new CommentMarker(e.ids, e.color, e.count).range(pos));
+    .map(([pos, e]) => new CommentMarker(e.ids, e.color, e.count, e.unread).range(pos));
   return { marks, deco: Decoration.set(ranges, true), gutter: RangeSet.of(gutterMarks, true) };
 }
 

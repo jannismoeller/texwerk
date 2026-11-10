@@ -321,7 +321,7 @@ export async function renderEditor(app: HTMLElement, project: string, meInfo: Me
     showList: () => side.show('comments'),
     onChange: () => {
       updateEditorComments();
-      side.setCommentCount(comments.openCount);
+      side.setCommentCount(comments.openCount, comments.unreadCount);
       schedulePins(500);
     },
   });
@@ -355,7 +355,7 @@ export async function renderEditor(app: HTMLElement, project: string, meInfo: Me
       body.classList.toggle('side-hidden', side.hidden);
     },
   });
-  side.setCommentCount(comments.openCount);
+  side.setCommentCount(comments.openCount, comments.unreadCount);
   side.setChatUnread(chat.unread, chat.mentioned > 0);
   function updateDocumentTitle(): void {
     document.title = `${chat.titlePrefix}${projectName} — TeXWerk`;
@@ -364,7 +364,7 @@ export async function renderEditor(app: HTMLElement, project: string, meInfo: Me
   function updateEditorComments(): void {
     if (!current || !currentPath) return;
     current.setComments(comments.visible(currentPath).map((t) => ({
-      id: t.id, from: t.from!, to: t.to!, color: colorFor(t.login.replace(/:agent$/, '')), replies: t.messages.length,
+      id: t.id, from: t.from!, to: t.to!, color: colorFor(t.login.replace(/:agent$/, '')), replies: t.messages.length, unread: comments.isUnread(t.id),
     })));
   }
 
@@ -499,6 +499,8 @@ export async function renderEditor(app: HTMLElement, project: string, meInfo: Me
         void api<{ compile: CompileSummary; output: string; log: string }>('GET', `/api/compile?project=${encodeURIComponent(project)}`)
           .then((r) => viewer.setCompile(r.compile, r.output, r.log));
       }
+    } else if (event.t === 'readState') {
+      comments.setReadState(event.threads);
     } else if (event.t === 'settings') {
       settings = event.settings;
       tree.render();

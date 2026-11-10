@@ -1,6 +1,7 @@
 import type * as Y from 'yjs';
 import { allThreads, sortThreads, type CommentThread } from '@shared/comments.ts';
 import { colorFor } from '@shared/files.ts';
+import { mergeSeen, newestMessage, unreadMessages, type SeenThreads } from '@shared/readState.ts';
 import { api, confirmDialog, copyText, formatTime, h, toast } from './ui.ts';
 
 /**
@@ -34,6 +35,13 @@ export class Comments {
   private popover: HTMLElement | null = null;
   private popoverThread: string | null = null;
   private selected: string | null = null;
+  /** What this name has seen, from the server (null until it arrives: then nothing counts as unread). */
+  private seen: SeenThreads | null = null;
+  /**
+   * Messages that were unread when their thread was opened or selected:
+   * still marked as new while the thread stays open, though it is read now.
+   */
+  private shownUnread = new Map<string, Set<string>>();
   show = true;
 
   constructor(opts: CommentsOptions) {
@@ -89,6 +97,62 @@ export class Comments {
     return this.threads.filter((t) => !t.resolved).length;
   }
 
+  // ------------------------------------------------------------ read state
+
+  /** The server's read state for this name (src/shared/readState.ts). */
+  setReadState(threads: SeenThreads): void {
+    this.seen = threads;
+    this.refresh();
+  }
+
+  private unread(t: CommentThread): number {
+    return unreadMessages(t, this.seen, this.opts.me().login).length;
+  }
+
+  isUnread(id: string): boolean {
+    const t = this.threads.find((x) => x.id === id);
+    return Boolean(t && this.unread(t));
+  }
+
+  /** Threads with messages by others this name has not seen. */
+  get unreadCount(): number {
+    return this.threads.filter((t) => this.unread(t)).length;
+  }
+
+  /** The thread was opened or selected: all of it is seen now. */
+  private markRead(id: string): void {
+    const t = this.threads.find((x) => x.id === id);
+    if (!t || !this.seen) return;
+    const fresh = unreadMessages(t, this.seen, this.opts.me().login);
+    if (fresh.length) {
+      const shown = this.shownUnread.get(id) ?? new Set<string>();
+      for (const m of fresh) shown.add(m.id);
+      this.shownUnread.set(id, shown);
+    }
+    const newest = newestMessage(t);
+    if (newest <= (this.seen[id] ?? 0)) return;
+    this.saveSeen({ seen: { [id]: newest } }, { [id]: newest });
+  }
+
+  markAllRead(): void {
+    if (!this.seen) return;
+    this.saveSeen({ all: true }, Object.fromEntries(this.threads.map((t) => [t.id, newestMessage(t)])));
+  }
+
+  /** Show the change at once; the server's answer (also sent to this name's other tabs) settles it. */
+  private saveSeen(body: Record<string, unknown>, local: SeenThreads): void {
+    this.seen = mergeSeen(this.seen ?? {}, local).merged;
+    this.refresh();
+    api<{ threads: SeenThreads }>('POST', `/api/comments/read?project=${encodeURIComponent(this.opts.project())}`, body)
+      .then((r) => { this.seen = mergeSeen(this.seen ?? {}, r.threads).merged; this.refresh(); })
+      .catch(() => { /* the next readState event brings it back in line */ });
+  }
+
+  /** Forget the "new" marks of threads that are no longer open or selected. */
+  private dropShownUnread(): void {
+    for (const id of [...this.shownUnread.keys()]) if (id !== this.popoverThread && id !== this.selected) this.shownUnread.delete(id);
+  }
+
   setShow(show: boolean): void {
     this.show = show;
     try { localStorage.setItem(SHOW_KEY, show ? '1' : '0'); } catch { /* ignore */ }
@@ -101,6 +165,8 @@ export class Comments {
     this.renderPanel();
     if (this.popoverThread) {
       const t = this.threads.find((x) => x.id === this.popoverThread);
+      // A reply arriving in the open thread is seen right there.
+      if (t && this.unread(t) && !document.hidden) { this.markRead(t.id); return; }
       if (t) this.popover?.replaceChildren(...this.threadBody(t, true));
       else this.closePopover();
     }
@@ -121,7 +187,10 @@ export class Comments {
 
   private threadBody(t: CommentThread, inPopover: boolean): Node[] {
     const me = this.opts.me();
+    const unread = new Set(unreadMessages(t, this.seen, me.login).map((m) => m.id));
+    for (const id of this.shownUnread.get(t.id) ?? []) unread.add(id);
     const head = h('div', { class: 'thread-head' },
+      this.unread(t) ? h('span', { class: 'unread-dot', title: 'New messages' }) : '',
       h('span', { class: 'thread-where', title: 'Go to the text' },
         t.from === null ? `${t.path} · text deleted` : `${t.path}:${t.line}`),
       h('span', { class: 'spacer' }),
@@ -156,11 +225,13 @@ export class Comments {
           void this.act({ op: 'delete', id: t.id, messageId: m.id });
         } }, 'delete'));
       }
-      return h('div', { class: 'msg' },
+      const isNew = unread.has(m.id);
+      return h('div', { class: `msg${isNew ? ' unread' : ''}` },
         h('div', { class: 'msg-head' },
           h('span', { class: 'msg-dot', style: `background:${colorFor(m.login.replace(/:agent$/, ''))}` }),
           h('span', { class: 'msg-author' }, m.author),
           h('span', { class: 'msg-time', title: new Date(m.ts).toLocaleString() }, `${formatTime(m.ts)}${m.edited ? ' · edited' : ''}`),
+          isNew ? h('span', { class: 'msg-new' }, 'new') : '',
           h('span', { class: 'spacer' }), tools),
         text);
     });
@@ -280,12 +351,15 @@ export class Comments {
     this.popover?.remove();
     this.popover = null;
     this.popoverThread = null;
+    this.dropShownUnread();
   }
 
   // ------------------------------------------------------------ list
 
   select(id: string | null): void {
     this.selected = id;
+    this.dropShownUnread();
+    if (id) this.markRead(id);
     // A resolved thread is only in the list when it shows all threads.
     if (id && this.filter === 'open' && this.threads.find((t) => t.id === id)?.resolved) {
       this.filter = 'all';
@@ -314,7 +388,7 @@ export class Comments {
     let resolvedHeading = false;
     for (const t of list) {
       if (t.resolved && !resolvedHeading) { cards.push(h('div', { class: 'comments-section' }, 'Resolved')); resolvedHeading = true; }
-      const card = h('div', { class: `thread-card${t.resolved ? ' resolved' : ''}${t.id === this.selected ? ' selected' : ''}`, 'data-id': t.id }, ...this.threadBody(t, false));
+      const card = h('div', { class: `thread-card${t.resolved ? ' resolved' : ''}${t.id === this.selected ? ' selected' : ''}${this.unread(t) ? ' unread' : ''}`, 'data-id': t.id }, ...this.threadBody(t, false));
       card.addEventListener('click', (e) => {
         if ((e.target as HTMLElement).closest('button, textarea, a')) return;
         this.select(t.id);
@@ -327,7 +401,10 @@ export class Comments {
     const typing = this.panel.contains(document.activeElement) && (document.activeElement as HTMLElement).classList.contains('reply-box');
     if (typing) return;
     const listEl = h('div', { class: 'comments-list' }, ...cards);
-    this.panel.replaceChildren(h('div', { class: 'comments-bar' }, filter, h('span', { class: 'spacer' }), toggle), listEl);
+    const unread = this.unreadCount;
+    const markAll = h('button', { class: 'ghost icon', title: 'Mark every thread as read', disabled: !unread }, 'Mark all read');
+    markAll.addEventListener('click', () => this.markAllRead());
+    this.panel.replaceChildren(h('div', { class: 'comments-bar' }, filter, markAll, h('span', { class: 'spacer' }), toggle), listEl);
     listEl.scrollTop = scroll;
   }
 }

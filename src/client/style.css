@@ -475,6 +475,18 @@ code { color: var(--cyan); }
   border-right: 4px solid transparent;
 }
 .cm-comment-marker:hover { filter: brightness(1.2); outline: 1px solid var(--text); }
+/* New messages by others: a dot on the bubble's corner. */
+.cm-comment-marker.unread::before {
+  content: '';
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px var(--bg);
+}
 .cm-tooltip.cm-comment-tip-host, .cm-comment-tip { background: transparent !important; border: 0 !important; }
 .cm-comment-tip button { padding: 2px 8px; border-color: var(--yellow); background: var(--panel); color: var(--yellow); font-size: 11px; box-shadow: 0 4px 14px rgb(0 0 0 / calc(50% * var(--shadow-k))); }
 .cm-comment-tip button:hover { background: var(--panel-2) !important; border-color: var(--yellow) !important; }
@@ -522,8 +534,8 @@ code { color: var(--cyan); }
 .reply-box { flex: 1; min-width: 0; resize: none; font: inherit; }
 
 .comments-view { position: absolute; inset: 0; display: flex; flex-direction: column; }
-.comments-bar { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--line); background: var(--panel); }
-.comments-toggle { display: flex; align-items: center; gap: 5px; color: var(--dim); font-size: 11px; cursor: pointer; }
+.comments-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 6px 10px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.comments-toggle { display: flex; align-items: center; gap: 5px; color: var(--dim); font-size: 11px; white-space: nowrap; cursor: pointer; }
 .comments-list { flex: 1; overflow: auto; padding: 8px; display: flex; flex-direction: column; gap: 8px; }
 .comments-empty { padding: 20px; color: var(--muted); text-align: center; }
 .comments-section { margin-top: 8px; color: var(--muted); font: 600 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; }
@@ -532,6 +544,11 @@ code { color: var(--cyan); }
 .thread-card.selected { border-color: var(--accent); }
 .thread-card.resolved { opacity: .55; }
 .thread-card.resolved:hover { opacity: .8; }
+/* Threads and messages this name has not seen. */
+.unread-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--accent); }
+.thread-card.unread .thread-where { color: var(--text); font-weight: 700; }
+.msg.unread { box-shadow: inset 2px 0 var(--accent); padding-left: 6px; }
+.msg-new { color: var(--accent); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
 
 .pdf-comment-mark {
   position: absolute;
@@ -1068,6 +1085,7 @@ button.busy { opacity: .75; cursor: progress; }
 .chat-choice.active, .chat-choice:hover { background: var(--panel-2); }
 .chat-choice .hint { color: var(--muted); font-size: 10.5px; }
 .viewer-tabs .tab .count.mention { background: var(--yellow); color: var(--on-color); }
+.viewer-tabs .tab .count.unread { background: var(--accent); color: var(--on-color); }
 
 /* Trash dialogs */
 .trash-list { max-height: 50vh; overflow: auto; margin: 8px 0; }
