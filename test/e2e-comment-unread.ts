@@ -64,6 +64,13 @@ check('selecting a thread reads it, its new messages stay marked while selected'
 const b = await open();
 check('a second browser of the same name has the same state', await state(b), { badge: '1', unreadCards: [fresh], newMsgs: ['New comment by Bob'], gutterDots: 1, markAllDisabled: false });
 await b.click('.comments-bar button:has-text("Mark all read")');
+await b.waitForSelector('.dialog');
+check('Mark all read asks first, Cancel changes nothing', await b.evaluate(() => document.querySelector('.dialog p')?.textContent), 'Mark 1 thread with new messages as read?');
+await b.click('.dialog button:has-text("Cancel")');
+await b.waitForTimeout(300);
+check('after Cancel the thread is still unread', (await state(b)).badge, '1');
+await b.click('.comments-bar button:has-text("Mark all read")');
+await b.click('.dialog button.primary');
 await a.waitForTimeout(1000);
 check('Mark all read in one browser reaches the other', await state(a), { badge: '0', unreadCards: [], newMsgs: ['Reply by Bob'], gutterDots: 0, markAllDisabled: true });
 const as = async (name: string) => {

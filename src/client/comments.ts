@@ -421,7 +421,10 @@ export class Comments {
     const listEl = h('div', { class: 'comments-list' }, ...cards);
     const unread = this.unreadCount;
     const markAll = h('button', { class: 'ghost icon', title: 'Mark every thread as read', disabled: !unread }, 'Mark all read');
-    markAll.addEventListener('click', () => this.markAllRead());
+    markAll.addEventListener('click', async () => {
+      const n = this.unreadCount;
+      if (await confirmDialog('Mark all read', `Mark ${n} thread${n === 1 ? '' : 's'} with new messages as read?`, 'Mark all read')) this.markAllRead();
+    });
     this.panel.replaceChildren(h('div', { class: 'comments-bar' }, filter, onlyUnread, markAll, h('span', { class: 'spacer' }), toggle), listEl);
     listEl.scrollTop = scroll;
   }

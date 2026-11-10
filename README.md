@@ -140,7 +140,7 @@ must not be exposed to the open internet.
   message an accent line on its left, the gutter bubble turns accent with a
   halo, and the Comments tab shows the number of such threads. A popup opened
   on such a thread keeps the frame and the lines while it stays open. A thread counts as read once it is opened in the popup or
-  selected in the list, and **Mark all read** reads them all. **unread
+  selected in the list, and **Mark all read** reads them all after a confirmation. **unread
   only** in the Comments tab lists just the threads with unseen messages (a
   thread read there stays listed while it is selected), and each browser
   remembers that choice. Resolved
