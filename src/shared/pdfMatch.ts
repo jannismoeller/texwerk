@@ -174,6 +174,31 @@ function allowedCost(length: number): number {
   return Math.floor(length * 0.25) + 1;
 }
 
+/**
+ * Where the skeleton `wanted` occurs in the skeleton `text`: exactly (the
+ * occurrence nearest `near`), else approximately, the whole of a short one or
+ * the two ends of a long one separately. [start, end) indexes `text`.
+ */
+function findSkeleton(wanted: string, text: string, near: number): { start: number; end: number; kind: 'exact' | 'fuzzy' } | null {
+  if (!wanted.length) return null;
+  let best = -1;
+  for (let i = text.indexOf(wanted); i >= 0; i = text.indexOf(wanted, i + 1)) {
+    if (best < 0 || Math.abs(i - near) < Math.abs(best - near)) best = i;
+  }
+  if (best >= 0) return { start: best, end: best + wanted.length, kind: 'exact' };
+  if (wanted.length <= 2 * END_LENGTH) {
+    const m = fuzzyFind(wanted, text, near);
+    if (m && m.cost <= allowedCost(wanted.length) && m.end > m.start) return { start: m.start, end: m.end, kind: 'fuzzy' };
+    return null;
+  }
+  const head = fuzzyFind(wanted.slice(0, END_LENGTH), text, near);
+  if (!head || head.cost > allowedCost(END_LENGTH)) return null;
+  const rest = text.slice(head.start);
+  const tail = fuzzyFind(wanted.slice(-END_LENGTH), rest, wanted.length - END_LENGTH);
+  if (tail && tail.cost <= allowedCost(END_LENGTH) && tail.end > 0) return { start: head.start, end: head.start + tail.end, kind: 'fuzzy' };
+  return null;
+}
+
 function lineStarts(src: string): number[] {
   const starts = [0];
   for (let i = src.indexOf('\n'); i >= 0; i = src.indexOf('\n', i + 1)) starts.push(i + 1);
@@ -201,27 +226,8 @@ export function matchPdfSelection(source: string, selected: string, firstLine: n
   const result = (a: number, b: number, kind: MatchKind): SourceMatch =>
     ({ ...widen(source, selected, skeleton.from[a], skeleton.to[b - 1]), kind });
 
-  if (wanted.length) {
-    // Exact: the occurrence nearest the start line.
-    let best = -1;
-    for (let i = skeleton.text.indexOf(wanted); i >= 0; i = skeleton.text.indexOf(wanted, i + 1)) {
-      if (best < 0 || Math.abs(i - nearIndex) < Math.abs(best - nearIndex)) best = i;
-    }
-    if (best >= 0) return result(best, best + wanted.length, 'exact');
-
-    // Fuzzy: the whole selection when short, else its two ends separately.
-    if (wanted.length <= 2 * END_LENGTH) {
-      const m = fuzzyFind(wanted, skeleton.text, nearIndex);
-      if (m && m.cost <= allowedCost(wanted.length) && m.end > m.start) return result(m.start, m.end, 'fuzzy');
-    } else {
-      const head = fuzzyFind(wanted.slice(0, END_LENGTH), skeleton.text, nearIndex);
-      if (head && head.cost <= allowedCost(END_LENGTH)) {
-        const rest = skeleton.text.slice(head.start);
-        const tail = fuzzyFind(wanted.slice(-END_LENGTH), rest, wanted.length - END_LENGTH);
-        if (tail && tail.cost <= allowedCost(END_LENGTH) && tail.end > 0) return result(head.start, head.start + tail.end, 'fuzzy');
-      }
-    }
-  }
+  const found = findSkeleton(wanted, skeleton.text, nearIndex);
+  if (found) return result(found.start, found.end, found.kind);
 
   // The whole lines, without their indentation and trailing spaces.
   let from = starts[lo - 1];
@@ -255,4 +261,108 @@ function widen(source: string, selected: string, from: number, to: number): { fr
   }
   for (let n = tail.length; n > 0 && /[.,;:!?)\]'"]/.test(source[to] ?? ''); n--) to++;
   return { from, to };
+}
+
+// ------------------------------------------------------- source to PDF
+
+/** A printed glyph: its text and box in PDF points from the page's top-left. */
+export interface PdfGlyph {
+  page: number;
+  text: string;
+  x0: number;
+  x1: number;
+  top: number;
+  bottom: number;
+}
+
+/** A box on a page, in PDF points from the page's top-left. */
+export interface PdfRect {
+  page: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Where a source quote is printed: glyphs `first` to `last` (inclusive). */
+export interface PdfQuoteMatch {
+  first: number;
+  last: number;
+  kind: 'exact' | 'fuzzy';
+}
+
+const OPENING = /[(\[`'"‘“]/;
+const CLOSING = /[.,;:!?)\]'"’”]/;
+
+/**
+ * Where the LaTeX `quote` is printed among `glyphs` (in reading order, as
+ * the PDF draws them): the other direction of matchPdfSelection, with the
+ * same skeletons. `near` is the glyph SyncTeX points at; of several equal
+ * passages the nearest wins. Null when the quote prints nothing or is not
+ * found.
+ */
+export function matchQuoteInPdf(quote: string, glyphs: ReadonlyArray<{ text: string }>, near: number): PdfQuoteMatch | null {
+  const wanted = sourceSkeleton(quote).text;
+  if (!wanted) return null;
+  // The glyphs' text, each character remembering its glyph.
+  let text = '';
+  const owner: number[] = [];
+  glyphs.forEach((g, i) => {
+    text += g.text;
+    for (let k = 0; k < g.text.length; k++) owner.push(i);
+  });
+  // Printed numeric citations have no counterpart in the source's skeleton.
+  const dropped = new Uint8Array(text.length);
+  for (const m of text.matchAll(PRINTED_CITATION)) dropped.fill(1, m.index!, m.index! + m[0].length);
+  let skeleton = '';
+  const skeletonGlyph: number[] = [];
+  for (let k = 0; k < text.length; k++) {
+    if (dropped[k]) continue;
+    for (const f of fold(text[k])) {
+      skeleton += f;
+      skeletonGlyph.push(owner[k]);
+    }
+  }
+  const nearIndex = Math.max(0, skeletonGlyph.findIndex((g) => g >= near));
+  const found = findSkeleton(wanted, skeleton, nearIndex);
+  if (!found) return null;
+  let first = skeletonGlyph[found.start];
+  let last = skeletonGlyph[found.end - 1];
+  // Brackets, quotes and punctuation at the ends print but have no skeleton.
+  const body = quote.trim().replace(/(?:\s|[{}]|%[^\n]*)+$/, '');
+  const lead = /^(?:\\[a-zA-Z@]+\*?\s*|[{\s])*([(\[`'"]*)/.exec(body)?.[1].replace(/``|''/g, '"').length ?? 0;
+  const tail = /[.,;:!?)\]'"]*$/.exec(body)![0].replace(/``|''/g, '"').length;
+  for (let n = lead; n > 0 && first > 0 && OPENING.test(glyphs[first - 1].text); n--) first--;
+  for (let n = tail; n > 0 && last + 1 < glyphs.length && CLOSING.test(glyphs[last + 1].text); n--) last++;
+  return { first, last, kind: found.kind };
+}
+
+/**
+ * One box per printed line of glyphs `first` to `last`, from the first
+ * glyph on that line to the last. A new line starts on another page, when a
+ * glyph sits vertically outside the current box, or when it moves back to
+ * the left or far to the right (another column).
+ */
+export function glyphRects(glyphs: readonly PdfGlyph[], first: number, last: number): PdfRect[] {
+  const rects: PdfRect[] = [];
+  let cur: { page: number; x0: number; x1: number; top: number; bottom: number } | null = null;
+  const flush = () => { if (cur) rects.push({ page: cur.page, x: cur.x0, y: cur.top, width: cur.x1 - cur.x0, height: cur.bottom - cur.top }); };
+  for (let i = Math.max(0, first); i <= last && i < glyphs.length; i++) {
+    const g = glyphs[i];
+    if (g.x1 <= g.x0 && !g.text.trim()) continue;
+    const mid = (g.top + g.bottom) / 2;
+    const height = g.bottom - g.top;
+    const sameLine = cur && cur.page === g.page && mid > cur.top && mid < cur.bottom
+      && g.x0 > cur.x0 - 1 && g.x0 < cur.x1 + 3 * height;
+    if (cur && sameLine) {
+      cur.x1 = Math.max(cur.x1, g.x1);
+      cur.top = Math.min(cur.top, g.top);
+      cur.bottom = Math.max(cur.bottom, g.bottom);
+    } else {
+      flush();
+      cur = { page: g.page, x0: g.x0, x1: g.x1, top: g.top, bottom: g.bottom };
+    }
+  }
+  flush();
+  return rects;
 }

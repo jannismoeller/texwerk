@@ -1,6 +1,6 @@
 /**
- * End-to-end check that comment pins land on the commented words in the PDF
- * viewer.
+ * End-to-end check that comment pins and marks land on the commented words
+ * in the PDF viewer.
  *
  *   node test/e2e-pdf-pins.ts <serverOrigin>        (CHROMIUM=/usr/bin/chromium by default)
  *
@@ -10,6 +10,13 @@
  * paragraphs, across a line break, and on page 2, opens the editor in a
  * headless browser, and compares every pin's position with where pdf.js
  * itself says the word is printed.
+ *
+ * It then checks the marks over the commented text of a whole \item line, a
+ * few words in the middle of a line and a paragraph across a page break
+ * against the text layer: the marks cover the middle of every commented word
+ * and of no word next to them, and their ends are within MARK_TOLERANCE_PT
+ * of the first and last word's ends. The text layer spaces characters with a
+ * browser font, so its words are themselves a few points off the glyphs.
  */
 import { strict as assert } from 'node:assert';
 import { chromium } from 'playwright-core';
@@ -17,6 +24,7 @@ import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 
 const origin = process.argv[2] ?? 'http://127.0.0.1:5810';
 const TOLERANCE_PT = 8;
+const MARK_TOLERANCE_PT = 4;
 const project = `pin-test-${Date.now().toString(36)}`;
 const api = async (method: string, path: string, body?: unknown) => {
   const r = await fetch(`${origin}${path}`, { method, body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body) });
@@ -31,6 +39,11 @@ const main = String.raw`\documentclass{article}
 First paragraph. ${filler.repeat(3)}Somewhere in the middle sits the word xylophone before more text. ${filler.repeat(2)}
 % a TeX comment that is never printed
 Second paragraph. ${filler.repeat(2)}Here comes quintessential photosynthesis again. ${filler.repeat(4)}
+\begin{itemize}
+  \item Morning route: short-distance walk along the river, stops at three bridges and a small village celebration, the old-town museum with its archives.
+  \item Evening route: both school classes at the lake shore.
+\end{itemize}
+Long paragraph. ${filler.repeat(40)}It ends right here.
 \newpage
 Page two paragraph. ${filler.repeat(5)}Near the end we mention the zeppelin hangar once. ${filler}
 \end{document}
@@ -45,6 +58,15 @@ const compiled = await api('POST', `/api/compile${q}&wait=1`);
 assert.ok(compiled.compile.hasPdf, 'the test document compiles');
 for (const quote of targets) await api('POST', `/api/comments${q}`, { op: 'create', path: 'main.tex', quote, text: `PIN ${quote}` });
 await api('POST', `/api/comments${q}`, { op: 'create', path: 'main.tex', quote: '% a TeX comment that is never printed', text: 'PIN none' });
+const itemLine = String.raw`\item Morning route: short-distance walk along the river, stops at three bridges and a small village celebration, the old-town museum with its archives.`;
+const longParagraph = `Long paragraph. ${filler.repeat(40)}It ends right here.`;
+const markCases = [
+  { name: 'a whole \\item line', quote: itemLine, words: ['Morning', 'village', 'archives.'], outside: ['Evening'] },
+  { name: 'words in the middle of a line', quote: 'quintessential photosynthesis', words: ['quintessential', 'photosynthesis'], outside: ['comes', 'again.'] },
+  { name: 'a paragraph across a page break', quote: longParagraph, words: ['Long', 'paragraph.', 'ends', 'here.'], outside: [], pages: 2 },
+];
+const markIds = new Map<string, string>();
+for (const c of markCases) markIds.set(c.name, (await api('POST', `/api/comments${q}`, { op: 'create', path: 'main.tex', quote: c.quote, text: `MARK ${c.name}` })).id);
 
 // Where pdf.js says each target's first word starts, in PDF points from the page's top-left.
 const pdfData = new Uint8Array(await (await fetch(`${origin}/pdf/${encodeURIComponent(project)}/x.pdf`)).arrayBuffer());
@@ -74,7 +96,7 @@ try {
   await page.goto(`${origin}/${q}`);
   await page.waitForFunction((n) => document.querySelectorAll('.pdf-pin').length >= n, targets.length, { timeout: 30_000 });
   await page.waitForTimeout(500);
-  const pins = await page.$$eval('.pdf-pin', (els) => els.map((el) => {
+  const pins = (await page.$$eval('.pdf-pin', (els) => els.map((el) => {
     const pageEl = el.parentElement as HTMLElement;
     const index = [...pageEl.parentElement!.children].indexOf(pageEl);
     const markEl = pageEl.querySelector(`.pdf-comment-mark[data-thread="${(el as HTMLElement).dataset.thread}"]`) as HTMLElement;
@@ -82,7 +104,7 @@ try {
       title: (el as HTMLElement).title, page: index + 1, left: parseFloat(markEl.style.left), top: parseFloat(markEl.style.top),
       bubbleTop: (el as HTMLElement).offsetTop, markHeight: markEl.offsetHeight, pageWidthPx: pageEl.clientWidth,
     };
-  }));
+  }))).filter((p) => p.title.includes('PIN '));
   const pageWidthPt = (await (await doc.getPage(1)).getViewport({ scale: 1 })).width;
   assert.equal(pins.length, targets.length, 'one pin per printed comment, none for the TeX comment');
   for (const t of targets) {
@@ -99,8 +121,62 @@ try {
     console.log(`${ok ? 'ok  ' : 'FAIL'} "${t}": page ${got.page}/${want.page}, highlight off by ${dx.toFixed(1)} pt across, ${dy.toFixed(1)} pt down; margin bubble ${level ? 'level with it' : 'NOT level'}`);
     if (!ok) failed = true;
   }
+
+  // Marks against the text layer. Draw every page's text layer first.
+  for (let i = 0; i < doc.numPages; i++) {
+    await page.evaluate((n) => document.querySelectorAll('.pdf-page')[n].scrollIntoView(), i);
+    await page.waitForFunction((n) => document.querySelectorAll('.pdf-page')[n].querySelector('.textLayer span'), i, { timeout: 10_000 });
+  }
+  await page.waitForTimeout(300);
+  const pxPerPt = await page.evaluate(() => (document.querySelector('.pdf-page') as HTMLElement).clientWidth) / pageWidthPt;
+  for (const c of markCases) {
+    const id = markIds.get(c.name)!;
+    const r = await page.evaluate(([id, words, outside, first]) => {
+      type Box = { page: number; left: number; right: number; top: number; bottom: number };
+      const pageOf = (el: Element) => [...document.querySelectorAll('.pdf-page')].indexOf(el.closest('.pdf-page')!) + 1;
+      const box = (b: DOMRect, el: Element): Box => ({ page: pageOf(el), left: b.left, right: b.right, top: b.top, bottom: b.bottom });
+      const marks = [...document.querySelectorAll(`.pdf-comment-mark[data-thread="${id}"]`)].map((m) => box(m.getBoundingClientRect(), m));
+      const spans = [...document.querySelectorAll('.textLayer span')].filter((s) => s.firstChild?.nodeType === Node.TEXT_NODE);
+      // Each word in the text layer, after the first word's span (words repeat in the filler).
+      const start = spans.findIndex((s) => s.textContent!.includes(first));
+      const find = (word: string): Box | null => {
+        for (const s of spans.slice(start)) {
+          const at = s.textContent!.search(new RegExp(`(^|\\s)${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s|$)`));
+          if (at < 0) continue;
+          const k = at + (s.textContent![at] === word[0] ? 0 : 1);
+          const range = document.createRange();
+          range.setStart(s.firstChild!, k);
+          range.setEnd(s.firstChild!, k + word.length);
+          return box(range.getBoundingClientRect(), s);
+        }
+        return null;
+      };
+      return { marks, words: words.map(find), outside: outside.map(find) };
+    }, [id, c.words, c.outside, c.words[0]] as const);
+    const covers = (w: { page: number; left: number; right: number; top: number; bottom: number }) => r.marks.some((m) =>
+      m.page === w.page && (w.left + w.right) / 2 > m.left && (w.left + w.right) / 2 < m.right && (w.top + w.bottom) / 2 > m.top && (w.top + w.bottom) / 2 < m.bottom);
+    const problems: string[] = [];
+    if (!r.marks.length) problems.push('no marks');
+    r.words.forEach((w, i) => { if (!w) problems.push(`"${c.words[i]}" not in the text layer`); else if (!covers(w)) problems.push(`"${c.words[i]}" not covered`); });
+    r.outside.forEach((w, i) => { if (w && covers(w)) problems.push(`"${c.outside[i]}" covered`); });
+    const firstWord = r.words[0];
+    const lastWord = r.words[r.words.length - 1];
+    const firstMark = r.marks[0];
+    const lastMark = r.marks[r.marks.length - 1];
+    let ends = '';
+    if (firstWord && lastWord && firstMark && lastMark) {
+      const dl = (firstMark.left - firstWord.left) / pxPerPt;
+      const dr = (lastMark.right - lastWord.right) / pxPerPt;
+      ends = `, start off by ${dl.toFixed(1)} pt, end by ${dr.toFixed(1)} pt`;
+      if (Math.abs(dl) > MARK_TOLERANCE_PT || Math.abs(dr) > MARK_TOLERANCE_PT) problems.push('an end is off');
+    }
+    const pages = new Set(r.marks.map((m) => m.page)).size;
+    if (pages !== (c.pages ?? 1)) problems.push(`marks on ${pages} pages`);
+    console.log(`${problems.length ? 'FAIL' : 'ok  '} marks of ${c.name}: ${r.marks.length} boxes on ${pages} page(s)${ends}${problems.length ? `: ${problems.join(', ')}` : ''}`);
+    if (problems.length) failed = true;
+  }
 } finally {
   await browser.close();
 }
 if (failed) process.exit(1);
-console.log('all pins on their words');
+console.log('all pins and marks on their words');

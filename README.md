@@ -109,8 +109,14 @@ must not be exposed to the open internet.
   header turns checking off.
 - **Comments.** Select text and press **💬 Comment** (or Ctrl+Alt+M). The
   text gets a highlight in the author's colour and a speech-bubble mark in
-  the gutter; the PDF gets a pin in the margin at the same place (via
-  SyncTeX). Threads are conversations: reply, edit, resolve, reopen. The
+  the gutter. In the PDF the commented text gets a mark, one box per printed
+  line, and a pin in the margin level with its first line. SyncTeX finds the
+  page and line, and the commented text is looked up among the glyphs of that
+  page and the next with the same matching as for PDF selections below.
+  The boxes come from the glyph widths in the page's drawing operators, not
+  from PDF.js's text layer, whose characters can sit a few points off the
+  printed glyphs. Text that is not found gets a small box at the start of its
+  line. Threads are conversations: reply, edit, resolve, reopen. The
   **Comments** tab of the side panel lists them, next to the PDF — open ones in document order, resolved ones
   greyed at the bottom — and jumps to the text. **Link** on a thread copies
   an address (`?project=…&comment=<id>`) that opens the project at that
@@ -288,6 +294,7 @@ node test/e2e-bridge.ts <origin> <project> <mirrorDir>          # with a server 
 node test/e2e-latex-editing.ts <origin> <projectsRoot>          # completion, Enter and vim in Chromium
 node test/e2e-links-and-sync.ts <origin>                        # comment links, double-click to PDF, lineno fix
 node test/e2e-pdf-comment.ts <origin>                           # a comment started from text selected in the PDF
+node test/e2e-pdf-pins.ts <origin>                              # comment pins and marks on their words in the PDF
 MODE=all node test/stress-bridge.ts <origin> <project> <mirrorDir> 8
 ```
 

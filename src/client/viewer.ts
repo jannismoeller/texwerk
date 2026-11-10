@@ -7,6 +7,8 @@ import type { PDFDocumentLoadingTask, PDFDocumentProxy, PDFPageProxy } from 'pdf
 import { extensionOf, IMAGE_EXTENSIONS } from '@shared/files.ts';
 import { formatMegabytes, type CompileIssue, type CompileSummary } from '@shared/protocol.ts';
 import { h, withName } from './ui.ts';
+import { pageGlyphs } from './pdfGlyphs.ts';
+import { glyphRects, matchQuoteInPdf, sourceSkeleton, type PdfGlyph, type PdfRect } from '@shared/pdfMatch.ts';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -19,35 +21,34 @@ pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
 export type Tab = 'pdf' | 'log' | 'file';
 
-interface TextRun {
-  str: string;
-  x: number;
-  top: number;
-  size: number;
-  width: number;
-}
-
-/** A comment's pin on the PDF, at its SyncTeX position. */
+/** A comment on the PDF: marks over its printed text and a pin in the margin. */
 export interface PdfPin {
   id: string;
   page: number;
-  /** The commented words' box on the page, in PDF points from the top-left. */
+  /** The first mark's box (level with the margin pin), in PDF points from the top-left. */
   x: number;
   y: number;
   width: number;
   height: number;
+  /** One box per printed line of the commented text, possibly on two pages. */
+  marks: PdfRect[];
   color: string;
   title: string;
 }
 
-/** Where a quote is printed: its first line's box, in PDF points from the page's top-left. */
-export interface TextSpot {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  /** False when only the paragraph was found, not the words themselves. */
+/** Where a quote is printed: one box per line, in PDF points from each page's top-left. */
+export interface QuoteSpot {
+  rects: PdfRect[];
+  /** False when the text was not found and the box only marks where SyncTeX puts its line. */
   exact: boolean;
+}
+
+/** Where SyncTeX puts a source line: its page and the block of its boxes there. */
+export interface LinePosition {
+  page: number;
+  x: number;
+  top: number;
+  bottom: number;
 }
 
 /**
@@ -206,73 +207,44 @@ class PdfView {
   onPageDrawn: ((page: number, ms: number, ops: number) => void) | null = null;
   private pins: PdfPin[] = [];
 
-  private textCache = new Map<number, Promise<TextRun[]>>();
+  private glyphCache = new Map<number, Promise<PdfGlyph[]>>();
 
-  /** The page's text runs: position, size and width in PDF points from the page's top-left. */
-  private pageText(pageNumber: number): Promise<TextRun[]> {
-    let cached = this.textCache.get(pageNumber);
+  /** The glyphs a page draws, with their boxes (pdfGlyphs.ts); none for a page that does not exist. */
+  private pageGlyphs(pageNumber: number): Promise<PdfGlyph[]> {
+    let cached = this.glyphCache.get(pageNumber);
     if (!cached) {
       const p = this.pages[pageNumber - 1];
-      cached = p ? p.page.getTextContent().then((tc) => tc.items.flatMap((item) => {
-        if (!('str' in item) || !item.str) return [];
-        const size = Math.hypot(item.transform[2], item.transform[3]) || 10;
-        return [{ str: item.str, x: item.transform[4], top: p.height - item.transform[5] - size * 0.8, size, width: item.width }];
-      })) : Promise.resolve([]);
-      this.textCache.set(pageNumber, cached);
+      cached = p ? pageGlyphs(p.page, pageNumber).catch(() => []) : Promise.resolve([]);
+      this.glyphCache.set(pageNumber, cached);
     }
     return cached;
   }
 
   /**
-   * Where exactly `quote` sits inside the block SyncTeX gave for its source
-   * line: search the page's own text for its first words and take the match
-   * nearest the block, else the block's top. Null only when the quote has no
-   * printed words at all (a TeX comment, a command, the preamble).
+   * Where the LaTeX `quote` is printed, given where SyncTeX puts its first
+   * line: its text is searched among the glyphs of that page and the next
+   * (pdfMatch.ts), nearest that line. When the text is not found, one small
+   * box on the printed line where SyncTeX puts it. Null only when the quote
+   * prints nothing (a TeX comment, a command, the preamble).
    */
-  async locate(pageNumber: number, top: number, bottom: number, quote: string, fallbackX = 0): Promise<TextSpot | null> {
-    const words = quote
-      .replace(/(^|[^\\])%.*$/gm, '$1')
-      .replace(/\$[^$]*\$/g, ' ')
-      .replace(/\\[a-zA-Z@]+\*?/g, ' ')
-      .replace(/[{}\[\]~\\^_&#]/g, ' ')
-      .split(/\s+/)
-      .map((w) => w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ''))
-      .filter((w) => w.length > 1);
-    if (!words.length) return null;
-    const items = await this.pageText(pageNumber);
-    // One string for the page, remembering which run each character came from.
-    let text = '';
-    const owner: number[] = [];
-    items.forEach((item, i) => {
-      const piece = `${item.str} `;
-      text += piece;
-      for (let k = 0; k < piece.length; k++) owner.push(i);
-    });
-    const esc = (w: string) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    for (let n = Math.min(4, words.length); n >= 1; n--) {
-      if (n === 1 && words[0].length < 4) break;
-      // Words may be hyphenated across lines or split between runs.
-      const pattern = new RegExp(words.slice(0, n).map((w) => w.split('').map(esc).join('(?:-?\\s*)?')).join('[\\s\\-]+'), 'giu');
-      let best: TextSpot | null = null;
-      for (const m of text.matchAll(pattern)) {
-        const run = items[owner[m.index!]];
-        const y = run.top;
-        const distance = y < top - 12 ? top - 12 - y : y > bottom + 4 ? y - bottom - 4 : 0;
-        if (distance > 40) continue;
-        if (best && Math.abs(best.y - (top + bottom) / 2) <= Math.abs(y - (top + bottom) / 2)) continue;
-        // Horizontal position inside the run, assuming even character widths;
-        // the highlight covers the match up to the end of its first line.
-        const runStart = owner.indexOf(owner[m.index!]);
-        const perChar = run.width / Math.max(1, run.str.length);
-        const offset = m.index! - runStart;
-        const onThisRun = Math.min(m[0].length, run.str.length - offset);
-        best = { x: run.x + offset * perChar, y, width: Math.max(8, onThisRun * perChar), height: run.size, exact: true };
-      }
-      if (best) return best;
-    }
-    // Printed words we could not find (odd markup, a ligature): the start of
-    // the paragraph is close enough.
-    return { x: fallbackX, y: top, width: 12, height: 10, exact: false };
+  async locate(pos: LinePosition, quote: string): Promise<QuoteSpot | null> {
+    if (!sourceSkeleton(quote).text) return null;
+    const [here, next] = await Promise.all([this.pageGlyphs(pos.page), this.pageGlyphs(pos.page + 1)]);
+    const onLine = (g: PdfGlyph) => {
+      const mid = (g.top + g.bottom) / 2;
+      return mid >= pos.top - 2 && mid <= pos.bottom + 2;
+    };
+    // The line's first letter or digit (not a list bullet).
+    let near = here.findIndex((g) => onLine(g) && g.x1 >= pos.x - 1 && /[\p{L}\p{N}]/u.test(g.text));
+    if (near < 0) near = here.findIndex(onLine);
+    const glyphs = [...here, ...next];
+    const match = matchQuoteInPdf(quote, glyphs, Math.max(0, near));
+    if (match) return { rects: glyphRects(glyphs, match.first, match.last), exact: true };
+    const g = near >= 0 ? here[near] : null;
+    return {
+      rects: [g ? { page: pos.page, x: g.x0, y: g.top, width: 12, height: g.bottom - g.top } : { page: pos.page, x: pos.x, y: pos.top, width: 12, height: 10 }],
+      exact: false,
+    };
   }
 
   /** Pins in the right margin of each page; several on one spot stack. */
@@ -294,9 +266,15 @@ class PdfView {
       if (!p) continue;
       const s = this.scale;
       const open = (e: Event, anchor: HTMLElement) => { e.stopPropagation(); this.onPinClick?.(pin.id, anchor.getBoundingClientRect()); };
-      const mark = h('div', {
-        class: 'pdf-comment-mark', title: pin.title, 'data-thread': pin.id,
-        style: `left:${pin.x * s}px;top:${pin.y * s}px;width:${pin.width * s}px;height:${pin.height * s}px;--c:${pin.color}`,
+      const marks = pin.marks.flatMap((r) => {
+        const on = this.pages[r.page - 1];
+        if (!on) return [];
+        const mark = h('div', {
+          class: 'pdf-comment-mark', title: pin.title, 'data-thread': pin.id,
+          style: `left:${r.x * s}px;top:${r.y * s}px;width:${r.width * s}px;height:${r.height * s}px;--c:${pin.color}`,
+        });
+        on.el.append(mark);
+        return [mark];
       });
       // Several comments on one line sit side by side in the margin.
       const row = `${pin.page}:${Math.round(pin.y / 6)}`;
@@ -306,14 +284,14 @@ class PdfView {
         class: 'pdf-pin', title: pin.title, 'data-thread': pin.id,
         style: `right:${5 + n * 17}px;top:${pin.y * s + Math.max(0, (pin.height * s - 12) / 2)}px;--c:${pin.color}`,
       });
-      mark.addEventListener('click', (e) => open(e, mark));
-      bubble.addEventListener('click', (e) => open(e, bubble));
-      for (const el of [mark, bubble]) {
+      p.el.append(bubble);
+      const all = [...marks, bubble];
+      for (const el of all) {
+        el.addEventListener('click', (e) => open(e, el));
         el.addEventListener('dblclick', (e) => e.stopPropagation());
-        el.addEventListener('mouseenter', () => { mark.classList.add('hot'); bubble.classList.add('hot'); });
-        el.addEventListener('mouseleave', () => { mark.classList.remove('hot'); bubble.classList.remove('hot'); });
+        el.addEventListener('mouseenter', () => { for (const x of all) x.classList.add('hot'); });
+        el.addEventListener('mouseleave', () => { for (const x of all) x.classList.remove('hot'); });
       }
-      p.el.append(mark, bubble);
     }
   }
 
@@ -381,7 +359,7 @@ class PdfView {
     this.observer.disconnect();
     this.doc = doc;
     this.task = task;
-    this.textCache.clear();
+    this.glyphCache.clear();
     this.pages = pages;
     if (this.fitWidth) this.scale = this.fitScale();
     this.layout();
@@ -712,8 +690,8 @@ export class Viewer {
     return Object.fromEntries(this.pinsNow.map((p) => [p.id, { page: p.page, x: p.x, y: p.y, width: p.width, height: p.height }]));
   }
 
-  locate(page: number, top: number, bottom: number, quote: string, fallbackX?: number): Promise<TextSpot | null> {
-    return this.pdf.locate(page, top, bottom, quote, fallbackX);
+  locate(pos: LinePosition, quote: string): Promise<QuoteSpot | null> {
+    return this.pdf.locate(pos, quote);
   }
 
   get pdfLoaded(): boolean {

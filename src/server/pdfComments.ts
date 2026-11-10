@@ -36,12 +36,19 @@ export async function pdfPosition(project: Project, file: string, line: number):
   const out = await synctex(project.dir, ['view', '-i', `${line}:0:${join(project.dir, file)}`, '-o', project.lastPdf]);
   // One record per box the line produced (a paragraph gives one per visual
   // line, in no particular order). Keep the first page's, spanning top to bottom.
-  const records = out.split(/^Output:/m).slice(1).map((r) => ({
+  const all = out.split(/^Output:/m).slice(1).map((r) => ({
     page: Number(/^Page:(\d+)/m.exec(r)?.[1] ?? 0),
+    x: Number(/^x:([\d.]+)/m.exec(r)?.[1] ?? 0),
     h: Number(/^h:([\d.]+)/m.exec(r)?.[1] ?? 0),
     v: Number(/^v:([\d.]+)/m.exec(r)?.[1] ?? 0),
+    W: Number(/^W:([\d.]+)/m.exec(r)?.[1] ?? 0),
     H: Number(/^H:([\d.]+)/m.exec(r)?.[1] ?? 0),
   })).filter((r) => r.page > 0);
+  // A record whose point is at the very right end of its box is the end of
+  // the previous paragraph, which TeX finishes only on reading this line
+  // (an \item, a blank line): it sits on the line above.
+  const own = all.filter((r) => !(r.W > 0 && r.x >= r.h + r.W - 0.5));
+  const records = own.length ? own : all;
   let result: PdfPosition | null = null;
   if (records.length) {
     const page = Math.min(...records.map((r) => r.page));
