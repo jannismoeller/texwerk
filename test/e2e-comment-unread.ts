@@ -11,7 +11,8 @@
  * - selecting a thread in the list reads it;
  * - a second browser of Ann's sees the same state, and its "Mark all read"
  *   reaches the first one;
- * - another name has its own state, and opening the popup reads a thread.
+ * - another name has its own state, and opening the popup reads a thread;
+ * - "unread only" lists just the unread threads and is remembered on reload.
  */
 import { strict as assert } from 'node:assert';
 import { chromium, type Page } from 'playwright-core';
@@ -65,15 +66,16 @@ check('a second browser of the same name has the same state', await state(b), { 
 await b.click('.comments-bar button:has-text("Mark all read")');
 await a.waitForTimeout(1000);
 check('Mark all read in one browser reaches the other', await state(a), { badge: '0', unreadCards: [], newMsgs: ['Reply by Bob'], gutterDots: 0, markAllDisabled: true });
-const c = await (async () => {
+const as = async (name: string) => {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const page = await ctx.newPage();
-  await page.addInitScript(() => { localStorage.setItem('texwerk-name', 'Carl'); localStorage.setItem('texwerk-side-panel', JSON.stringify({ tab: 'comments' })); });
+  await page.addInitScript((n) => { localStorage.setItem('texwerk-name', n); localStorage.setItem('texwerk-side-panel', JSON.stringify({ tab: 'comments' })); }, name);
   await page.goto(`${origin}/${q}&file=main.tex`);
   await page.waitForSelector('.thread-card', { timeout: 20000 });
   await page.waitForTimeout(800);
   return page;
-})();
+};
+const c = await as('Carl');
 await api('POST', `/api/comments${q}`, { op: 'reply', id: old, text: 'Bob again' });
 await c.waitForTimeout(800);
 check('another name has its own state', await state(c), { badge: '1', unreadCards: [old], newMsgs: ['Bob again'], gutterDots: 1, markAllDisabled: false });
@@ -81,6 +83,18 @@ check('another name has its own state', await state(c), { badge: '1', unreadCard
 await c.evaluate(() => (document.querySelector('.cm-comment-marker') as HTMLElement).dispatchEvent(new MouseEvent('mousedown', { bubbles: true })));
 await c.waitForTimeout(800);
 check('opening the popup reads the thread and marks its new message', [await state(c), await c.evaluate(() => [...document.querySelectorAll('.comment-popover.unread .msg.unread .msg-text')].map((m) => m.textContent))], [{ badge: '0', unreadCards: [], newMsgs: ['Bob again'], gutterDots: 0, markAllDisabled: true }, ['Bob again']]);
+const d = await as('Dan');
+await api('POST', `/api/comments${q}`, { op: 'reply', id: fresh, text: 'Bob for Dan' });
+await d.waitForTimeout(800);
+const listed = (page: Page) => page.evaluate(() => [...document.querySelectorAll('.thread-card')].map((x) => (x as HTMLElement).dataset.id));
+check('without the filter both threads are listed', await listed(d), [old, fresh]);
+await d.check('.comments-bar label:has-text("unread only") input');
+await d.waitForTimeout(300);
+check('"unread only" lists the unread thread', await listed(d), [fresh]);
+await d.reload();
+await d.waitForSelector('.thread-card', { timeout: 20000 });
+await d.waitForTimeout(800);
+check('"unread only" is remembered on reload', [await d.isChecked('.comments-bar label:has-text("unread only") input'), await listed(d)], [true, [fresh]]);
 } finally {
   await browser.close();
   await api('POST', `/api/projects/delete${q}`).catch(() => undefined);

@@ -26,12 +26,15 @@ export interface CommentsOptions {
 }
 
 const SHOW_KEY = 'texwerk-show-comments';
+const UNREAD_ONLY_KEY = 'texwerk-comments-unread-only';
 
 export class Comments {
   readonly panel = h('div', { class: 'comments-view' });
   private readonly opts: CommentsOptions;
   private threads: CommentThread[] = [];
   private filter: 'open' | 'all' = 'open';
+  /** List only threads with messages this name has not seen (remembered per browser). */
+  private unreadOnly = false;
   private popover: HTMLElement | null = null;
   private popoverThread: string | null = null;
   private selected: string | null = null;
@@ -47,6 +50,7 @@ export class Comments {
   constructor(opts: CommentsOptions) {
     this.opts = opts;
     try { this.show = localStorage.getItem(SHOW_KEY) !== '0'; } catch { /* default on */ }
+    try { this.unreadOnly = localStorage.getItem(UNREAD_ONLY_KEY) === '1'; } catch { /* default off */ }
     let queued = false;
     opts.doc.getMap('comments').observeDeep(() => {
       if (queued) return;
@@ -383,11 +387,21 @@ export class Comments {
       h('option', { value: 'open', selected: this.filter === 'open' }, `Open (${open.length})`),
       h('option', { value: 'all', selected: this.filter === 'all' }, `All (${this.threads.length})`));
     filter.addEventListener('change', () => { this.filter = filter.value as 'open' | 'all'; this.renderPanel(); });
+    const onlyUnread = h('label', { class: 'comments-toggle', title: 'List only threads with messages you have not seen' },
+      h('input', { type: 'checkbox', checked: this.unreadOnly }), 'unread only');
+    onlyUnread.querySelector('input')!.addEventListener('change', (e) => {
+      this.unreadOnly = (e.target as HTMLInputElement).checked;
+      try { localStorage.setItem(UNREAD_ONLY_KEY, this.unreadOnly ? '1' : '0'); } catch { /* this page only */ }
+      this.renderPanel();
+    });
     const cards: Node[] = [];
-    const list = this.filter === 'open' ? open : [...open, ...resolved];
+    let list = this.filter === 'open' ? open : [...open, ...resolved];
+    // A thread read just now (open or selected) stays until it is left.
+    if (this.unreadOnly) list = list.filter((t) => this.unread(t) || this.shownUnread.has(t.id) || t.id === this.selected);
     if (!list.length) {
       cards.push(h('div', { class: 'comments-empty' },
-        this.threads.length ? 'No open comments.' : 'No comments yet. Select text in the editor and press Comment (Ctrl+Alt+M).'));
+        !this.threads.length ? 'No comments yet. Select text in the editor and press Comment (Ctrl+Alt+M).'
+          : this.unreadOnly ? 'No unread comments.' : 'No open comments.'));
     }
     let resolvedHeading = false;
     for (const t of list) {
@@ -408,7 +422,7 @@ export class Comments {
     const unread = this.unreadCount;
     const markAll = h('button', { class: 'ghost icon', title: 'Mark every thread as read', disabled: !unread }, 'Mark all read');
     markAll.addEventListener('click', () => this.markAllRead());
-    this.panel.replaceChildren(h('div', { class: 'comments-bar' }, filter, markAll, h('span', { class: 'spacer' }), toggle), listEl);
+    this.panel.replaceChildren(h('div', { class: 'comments-bar' }, filter, onlyUnread, markAll, h('span', { class: 'spacer' }), toggle), listEl);
     listEl.scrollTop = scroll;
   }
 }
