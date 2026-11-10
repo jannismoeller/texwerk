@@ -52,7 +52,9 @@ export class Comments {
       textQueued = window.setTimeout(() => { if (this.threads.length) this.refresh(); }, 400);
     });
     document.addEventListener('mousedown', (e) => {
-      if (this.popover && !this.popover.contains(e.target as Node) && !(e.target as HTMLElement).closest('.cm-comment-marker, .pdf-pin, .pdf-comment-mark, .cm-comment-tip')) this.closePopover();
+      // A click in commented text decides itself (CodeEditor's click handler):
+      // it switches to that thread, or closes the popover after a drag.
+      if (this.popover && !this.popover.contains(e.target as Node) && !(e.target as HTMLElement).closest('.cm-comment-marker, .pdf-pin, .pdf-comment-mark, .cm-comment-tip, .cm-comment-range')) this.closePopover();
     });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && this.popover && !document.querySelector('.backdrop')) this.closePopover(); });
     // After the constructor returns: onChange may use the instance.
@@ -193,14 +195,19 @@ export class Comments {
 
   // ------------------------------------------------------------ popover
 
-  /** Show a thread next to `rect` (a gutter marker, highlighted text or PDF pin). */
-  openThread(id: string, rect: DOMRect): void {
+  /**
+   * Show a thread: beside `rect` (a PDF pin), or, with `line`, below or
+   * above that line of the editor, so the line stays in view. The focus
+   * stays where it is; the reply box takes it when clicked.
+   */
+  openThread(id: string, rect: DOMRect, placement: 'beside' | 'line' = 'beside'): void {
     const t = this.threads.find((x) => x.id === id);
     if (!t) return;
     this.select(id);
+    // The same thread again (another line of it): move it, keeping a reply being typed.
+    if (this.popoverThread === id && this.popover) { this.position(this.popover, rect, placement); return; }
     this.popoverThread = id;
-    this.placePopover(this.threadBody(t, true), rect);
-    (this.popover?.querySelector('.reply-box') as HTMLElement | null)?.focus();
+    this.placePopover(this.threadBody(t, true), rect, placement);
   }
 
   /** The composer for a new comment on [from, to) of `path`. */
@@ -228,16 +235,40 @@ export class Comments {
     box.focus();
   }
 
-  private placePopover(content: Node[], rect: DOMRect): void {
+  private placePopover(content: Node[], rect: DOMRect, placement: 'beside' | 'line' = 'beside'): void {
     this.popover?.remove();
     const pop = h('div', { class: 'comment-popover' }, ...content);
     document.body.append(pop);
-    const width = pop.offsetWidth;
-    const left = Math.max(8, Math.min(rect.right + 10, window.innerWidth - width - 8));
-    const top = Math.max(46, Math.min(rect.top - 8, window.innerHeight - pop.offsetHeight - 30));
-    pop.style.left = `${left}px`;
-    pop.style.top = `${top}px`;
+    this.position(pop, rect, placement);
     this.popover = pop;
+  }
+
+  private position(pop: HTMLElement, rect: DOMRect, placement: 'beside' | 'line'): void {
+    pop.style.maxHeight = '';
+    const width = pop.offsetWidth;
+    if (placement === 'line') {
+      // Below the line, else above it, else on the side with more room
+      // (shorter, scrolling): never over the line itself.
+      const minTop = 46;
+      const maxBottom = window.innerHeight - 30;
+      const below = maxBottom - (rect.bottom + 6);
+      const above = rect.top - 6 - minTop;
+      const height = pop.offsetHeight;
+      const left = Math.max(8, Math.min(rect.left - 24, window.innerWidth - width - 8));
+      pop.style.left = `${left}px`;
+      if (height <= below || below >= above) {
+        pop.style.top = `${rect.bottom + 6}px`;
+        if (height > below) pop.style.maxHeight = `${Math.max(120, below)}px`;
+      } else {
+        pop.style.top = `${Math.max(minTop, rect.top - 6 - height)}px`;
+        if (height > above) pop.style.maxHeight = `${above}px`;
+      }
+    } else {
+      const left = Math.max(8, Math.min(rect.right + 10, window.innerWidth - width - 8));
+      const top = Math.max(46, Math.min(rect.top - 8, window.innerHeight - pop.offsetHeight - 30));
+      pop.style.left = `${left}px`;
+      pop.style.top = `${top}px`;
+    }
   }
 
   closePopover(): void {
