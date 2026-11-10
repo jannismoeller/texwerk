@@ -18,6 +18,8 @@ export interface CommentsOptions {
   canModerate: () => boolean;
   /** Jump to a thread's text in the editor (opening the file). */
   reveal: (thread: CommentThread) => void;
+  /** Bring the Comments tab to the front; `select` then highlights the card. */
+  showList: () => void;
   /** Called whenever the set of threads changes. */
   onChange: () => void;
 }
@@ -50,7 +52,7 @@ export class Comments {
       textQueued = window.setTimeout(() => { if (this.threads.length) this.refresh(); }, 400);
     });
     document.addEventListener('mousedown', (e) => {
-      if (this.popover && !this.popover.contains(e.target as Node) && !(e.target as HTMLElement).closest('.cm-comment-marker, .pdf-pin, .pdf-comment-mark, .cm-comment-range, .cm-comment-tip')) this.closePopover();
+      if (this.popover && !this.popover.contains(e.target as Node) && !(e.target as HTMLElement).closest('.cm-comment-marker, .pdf-pin, .pdf-comment-mark, .cm-comment-tip')) this.closePopover();
     });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && this.popover && !document.querySelector('.backdrop')) this.closePopover(); });
     // After the constructor returns: onChange may use the instance.
@@ -121,6 +123,14 @@ export class Comments {
       h('span', { class: 'thread-where', title: 'Go to the text' },
         t.from === null ? `${t.path} · text deleted` : `${t.path}:${t.line}`),
       h('span', { class: 'spacer' }),
+      inPopover
+        ? h('button', { class: 'ghost icon', title: 'Show this thread in the Comments tab', onclick: (e: Event) => {
+          e.stopPropagation();
+          this.closePopover();
+          this.opts.showList();
+          this.select(t.id);
+        } }, 'In list')
+        : '',
       h('button', { class: 'ghost icon', title: 'Copy a link that opens this comment — for anyone who has access to the project', onclick: (e: Event) => {
         e.stopPropagation();
         const link = this.link(t.id);

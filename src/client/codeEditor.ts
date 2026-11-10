@@ -9,10 +9,9 @@ import { defaultKeymap, indentWithTab } from '@codemirror/commands';
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import {
-  StreamLanguage, HighlightStyle, syntaxHighlighting, bracketMatching, indentOnInput, foldGutter, foldKeymap,
+  StreamLanguage, bracketMatching, indentOnInput, foldGutter, foldKeymap,
 } from '@codemirror/language';
 import { stex } from '@codemirror/legacy-modes/mode/stex';
-import { tags as t } from '@lezer/highlight';
 import * as Y from 'yjs';
 import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next';
 import { vim, Vim, CodeMirror as VimCM } from '@replit/codemirror-vim';
@@ -21,6 +20,7 @@ import { extensionOf } from '@shared/files.ts';
 import { latexSupport, type LatexProject } from './latex.ts';
 import { spellcheck } from './spellcheck.ts';
 import { isProseFile } from '@shared/prose.ts';
+import { editorTheme, onThemeChange } from './theme.ts';
 
 /**
  * A CodeMirror view bound to one Y.Text. Remote carets and selections come
@@ -28,20 +28,6 @@ import { isProseFile } from '@shared/prose.ts';
  * only tracks this client's own edits), so undo never reverts a collaborator.
  */
 
-const tokyo = HighlightStyle.define([
-  { tag: [t.keyword, t.tagName], color: '#7aa2f7' },
-  { tag: [t.atom, t.bool, t.special(t.variableName)], color: '#ff9e64' },
-  { tag: [t.number], color: '#ff9e64' },
-  { tag: [t.string, t.special(t.string)], color: '#9ece6a' },
-  { tag: [t.comment, t.lineComment, t.blockComment], color: '#565f89', fontStyle: 'italic' },
-  { tag: [t.bracket, t.brace, t.squareBracket, t.paren], color: '#bb9af7' },
-  { tag: [t.variableName, t.typeName], color: '#7dcfff' },
-  { tag: [t.definition(t.variableName), t.function(t.variableName)], color: '#7dcfff' },
-  { tag: [t.heading], color: '#e0af68', fontWeight: 'bold' },
-  { tag: [t.meta, t.processingInstruction], color: '#e0af68' },
-  { tag: [t.operator], color: '#89ddff' },
-  { tag: [t.invalid], color: '#f7768e' },
-]);
 
 // Flash a line after a jump (from the log, SyncTeX, or following someone).
 const flashEffect = StateEffect.define<number>();
@@ -227,7 +213,11 @@ export interface CodeEditorOptions {
   spellcheck?: boolean;
   /** Start a comment on the selection. */
   onComment?: (from: number, to: number, rect: DOMRect) => void;
-  /** Open the given thread(s), shown next to `rect`. */
+  /**
+   * Open the given thread(s), shown next to `rect`. Only the gutter's speech
+   * bubble does this: a click in commented text places the caret like
+   * anywhere else, so the text stays editable.
+   */
   onOpenThread?: (ids: string[], rect: DOMRect) => void;
 }
 
@@ -251,6 +241,8 @@ export class CodeEditor {
   private readonly undo: Y.UndoManager;
   private readonly vimMode = new Compartment();
   private readonly spellMode = new Compartment();
+  private readonly themeMode = new Compartment();
+  private readonly unsubscribeTheme: () => void;
   private readonly prose: boolean;
 
   constructor(parent: HTMLElement, opts: CodeEditorOptions) {
@@ -286,7 +278,7 @@ export class CodeEditor {
         highlightActiveLine(),
         highlightActiveLineGutter(),
         highlightSelectionMatches(),
-        syntaxHighlighting(tokyo),
+        this.themeMode.of(editorTheme()),
         EditorView.lineWrapping,
         // Read-only refuses edits but keeps the caret and keyboard selection,
         // so viewers can still select text to comment on.
@@ -296,13 +288,6 @@ export class CodeEditor {
         commentsField,
         commentTooltip(() => this.startComment()),
         EditorView.domEventHandlers({
-          click: (e) => {
-            const range = (e.target as HTMLElement).closest('.cm-comment-range') as HTMLElement | null;
-            if (range && this.view.state.selection.main.empty) {
-              opts.onOpenThread?.([range.dataset.thread!], range.getBoundingClientRect());
-            }
-            return false;
-          },
           // Double-click still selects the word, and also shows it in the PDF.
           dblclick: (e, view) => {
             const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
@@ -332,10 +317,10 @@ export class CodeEditor {
             opts.onCursor(line.number, head - line.from + 1);
           }
         }),
-        EditorView.theme({}, { dark: true }),
       ],
     });
     this.view = new EditorView({ state, parent });
+    this.unsubscribeTheme = onThemeChange((theme) => this.view.dispatch({ effects: this.themeMode.reconfigure(editorTheme(theme)) }));
     vimSave.set(this.view, opts.onCompile);
     this.onComment = opts.onComment;
     // Gutter markers sit outside the content DOM that CodeMirror's own
@@ -410,6 +395,7 @@ export class CodeEditor {
   }
 
   destroy(): void {
+    this.unsubscribeTheme();
     this.view.destroy();
     this.undo.destroy();
   }

@@ -1,9 +1,10 @@
-import { EditorState } from '@codemirror/state';
+import { Compartment, EditorState } from '@codemirror/state';
 import { EditorView, lineNumbers } from '@codemirror/view';
 import { unifiedMergeView } from '@codemirror/merge';
 import { colorFor } from '@shared/files.ts';
 import type { GitLabel, HistoryEntry } from '@shared/protocol.ts';
 import { api, confirmDialog, formatTime, h, toast, withName } from './ui.ts';
+import { editorTheme, onThemeChange } from './theme.ts';
 
 /**
  * The history view: every change to the project, grouped into bursts of
@@ -49,6 +50,10 @@ export class HistoryView {
   private diffView: EditorView | null = null;
   private readonly blobCache = new Map<string, Promise<string>>();
   private readonly opts: HistoryOptions;
+  private readonly diffTheme = new Compartment();
+  private readonly unsubscribeTheme = onThemeChange((theme) => {
+    this.diffView?.dispatch({ effects: this.diffTheme.reconfigure(editorTheme(theme)) });
+  });
 
   constructor(opts: HistoryOptions) {
     this.opts = opts;
@@ -242,13 +247,14 @@ export class HistoryView {
           EditorState.readOnly.of(true),
           EditorView.lineWrapping,
           unifiedMergeView({ original: oldText, mergeControls: false, highlightChanges: true, gutter: true, collapseUnchanged: { margin: 3, minSize: 6 } }),
-          EditorView.theme({}, { dark: true }),
+          this.diffTheme.of(editorTheme()),
         ],
       }),
     });
   }
 
   destroy(): void {
+    this.unsubscribeTheme();
     this.diffView?.destroy();
   }
 }

@@ -1,6 +1,9 @@
 import { api, h, storedName, storeName } from './ui.ts';
 import { showPicker, type Me } from './picker.ts';
 import { renderEditor } from './editor.ts';
+import { applyTheme } from './theme.ts';
+
+applyTheme();
 
 /**
  * One page, two views: without ?project= the project picker, with it the

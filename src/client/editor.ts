@@ -15,6 +15,7 @@ import type { AuthorInfo } from '@shared/protocol.ts';
 import type { CommentThread } from '@shared/comments.ts';
 import { api, ApiError, copyText, dialog, h, initials, menu, menuAt, storedName, storeName, toast, withName } from './ui.ts';
 import { showPicker, showShareDialog, type Me } from './picker.ts';
+import { currentTheme, setTheme } from './theme.ts';
 
 /**
  * The project editor: file tree | code editor | PDF viewer, with live
@@ -156,6 +157,13 @@ export async function renderEditor(app: HTMLElement, project: string, meInfo: Me
     current?.setVim(vimOn);
     current?.view.focus();
   });
+  // Dark colour scheme, per browser; light unless turned on.
+  const darkBtn = h('button', { class: `ghost icon authors-toggle${currentTheme() === 'dark' ? ' on' : ''}`, title: 'Dark colour scheme (this browser only)' }, 'Dark');
+  darkBtn.addEventListener('click', () => {
+    const dark = currentTheme() !== 'dark';
+    darkBtn.classList.toggle('on', dark);
+    setTheme(dark ? 'dark' : 'light');
+  });
   authorsMap.observe(() => scheduleAuthors());
   const editorHost = h('div', { class: 'editor-host' });
   const editorPane = h('div', { class: 'pane' }, editorHead, editorHost);
@@ -264,6 +272,7 @@ export async function renderEditor(app: HTMLElement, project: string, meInfo: Me
     me: () => me,
     canModerate: () => meInfo.admin,
     reveal: (t) => revealThread(t),
+    showList: () => viewer.showTab('comments'),
     onChange: () => {
       updateEditorComments();
       viewer.setCommentsPanel(comments.panel, comments.openCount);
@@ -587,7 +596,8 @@ export async function renderEditor(app: HTMLElement, project: string, meInfo: Me
         authorsLegend,
         authorsBtn,
         spellBtn,
-        vimBtn);
+        vimBtn,
+        darkBtn);
       updateAuthors();
       tree.select(path);
       const url = new URL(location.href);

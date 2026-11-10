@@ -6,9 +6,59 @@
   font-display: swap;
 }
 
-/* DeckWerk's chrome: terminal-inspired, monospace UI, hard right angles,
-   muted pastel accents on a deep neutral ground. */
+/* DeckWerk's chrome: terminal-inspired, monospace UI, hard right angles.
+   Two colour schemes, chosen per browser (theme.ts sets data-theme on
+   <html>). Light, the default, is dark grey ink on near-white paper with
+   muted accents. Dark is the Tokyo Night palette. The rules below the
+   palettes take every colour from these variables, so one rule serves both. */
 :root {
+  color-scheme: light;
+  --bg: #fbfaf8;
+  --panel: #f3f2ef;
+  --panel-2: #eae8e4;
+  --line: #d9d6d0;
+  --text: #2b2a28;
+  --muted: #7d7972;
+  --dim: #5f5c57;
+  --accent: #3e6b77;
+  --green: #4a7a34;
+  --yellow: #93650f;
+  --danger: #b0403c;
+  --purple: #77588f;
+  --cyan: #2f6a78;
+  /* Text on a solid accent or author colour (badges, counters, bubbles). */
+  --on-color: #fff;
+  /* Behind the PDF pages and images, and in command boxes. */
+  --viewer-bg: #e3e1dc;
+  --checker-a: #e8e6e1;
+  --checker-b: #f5f4f1;
+  --code-bg: #efede8;
+  /* The dimmed page behind dialogs and the projects browser. */
+  --overlay: rgb(60 56 48 / 34%);
+  --overlay-strong: rgb(60 56 48 / 42%);
+  --drop-overlay: rgb(251 250 248 / 82%);
+  /* Every shadow's alpha is scaled by this. */
+  --shadow-k: .32;
+  --active-line: rgb(0 0 0 / 3%);
+  /* Author colours (comments, carets, Authors view). The shared palette is
+     pastel, made for a dark ground. On paper, solid uses (bubbles, pins,
+     underlines, carets) mix it with black until it stands out:
+     --author-ink is how much of the author colour remains (as --c-ink).
+     Highlights use that ink at the --comment-* strengths. The comment
+     marks on the PDF use the same variables as the editor. */
+  --author-ink: 68%;
+  --comment-fill: 16%;
+  --comment-fill-pdf: 22%;
+  --comment-fill-hot: 40%;
+  --comment-line: 75%;
+  --author-fill: 14%;
+  /* Remote carets and presence chips get their colour inline from
+     y-codemirror, so a filter darkens them on paper. */
+  --caret-filter: brightness(.7) saturate(1.3);
+  --radius: 0;
+  --mono: "Monaspace Krypton", ui-monospace, monospace;
+}
+:root[data-theme="dark"] {
   color-scheme: dark;
   --bg: #16161e;
   --panel: #1a1b26;
@@ -18,14 +68,49 @@
   --muted: #565f89;
   --dim: #7982a9;
   --accent: #7aa2f7;
-  --accent-soft: rgb(122 162 247 / 12%);
   --green: #9ece6a;
   --yellow: #e0af68;
   --danger: #f7768e;
   --purple: #bb9af7;
   --cyan: #7dcfff;
-  --radius: 0;
-  --mono: "Monaspace Krypton", ui-monospace, monospace;
+  --on-color: #16161e;
+  --viewer-bg: #0f0f15;
+  --checker-a: #1c1d27;
+  --checker-b: #16161e;
+  --code-bg: #0b0d12;
+  --overlay: rgb(4 5 8 / 78%);
+  --overlay-strong: rgb(4 5 8 / 82%);
+  --drop-overlay: rgb(22 22 30 / 80%);
+  --shadow-k: 1;
+  --active-line: rgb(255 255 255 / 2.5%);
+  --author-ink: 100%;
+  --comment-fill: 18%;
+  --comment-fill-pdf: 28%;
+  --comment-fill-hot: 55%;
+  --comment-line: 70%;
+  --author-fill: 16%;
+  --caret-filter: none;
+}
+/* Derived from the palette, so they follow the scheme. */
+:root {
+  --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
+  --accent-strong: color-mix(in srgb, var(--accent) 22%, transparent);
+  --selection: color-mix(in srgb, var(--accent) 25%, transparent);
+  --search-match: color-mix(in srgb, var(--yellow) 25%, transparent);
+  --search-outline: color-mix(in srgb, var(--yellow) 50%, transparent);
+  --search-current: color-mix(in srgb, var(--yellow) 45%, transparent);
+  --mark: color-mix(in srgb, var(--yellow) 22%, transparent);
+  --flash: color-mix(in srgb, var(--yellow) 35%, transparent);
+  --lint-line: color-mix(in srgb, var(--danger) 8%, transparent);
+  --diff-add: color-mix(in srgb, var(--green) 10%, transparent);
+  --diff-add-strong: color-mix(in srgb, var(--green) 30%, transparent);
+  --diff-del: color-mix(in srgb, var(--danger) 10%, transparent);
+  --diff-del-strong: color-mix(in srgb, var(--danger) 30%, transparent);
+}
+/* An author colour as ink, for every element that carries one in --c. */
+.cm-comment-range, .cm-comment-marker, .pdf-comment-mark, .pdf-pin, .cm-author,
+.authors-chip, .history-item .who span {
+  --c-ink: color-mix(in srgb, var(--c) var(--author-ink), #000);
 }
 
 * { box-sizing: border-box; }
@@ -53,9 +138,9 @@ button:hover:not(:disabled) { border-color: var(--muted); background: var(--pane
 button:active:not(:disabled) { background: var(--panel-2); }
 button:disabled { opacity: .4; cursor: default; }
 button.primary { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 600; }
-button.primary:hover:not(:disabled) { border-color: var(--accent); background: rgb(122 162 247 / 22%); }
+button.primary:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-strong); }
 button.danger { border-color: var(--danger); color: var(--danger); }
-button.danger:hover:not(:disabled) { border-color: var(--danger); background: var(--danger); color: var(--bg); }
+button.danger:hover:not(:disabled) { border-color: var(--danger); background: var(--danger); color: var(--on-color); }
 button.ghost { border-color: transparent; background: transparent; }
 button.ghost:hover:not(:disabled) { border-color: var(--line); background: var(--panel-2); }
 button.icon { padding: 2px 7px; }
@@ -152,7 +237,8 @@ code { color: var(--cyan); }
   height: 22px;
   place-items: center;
   border: 1px solid transparent;
-  color: var(--bg);
+  color: var(--on-color);
+  filter: var(--caret-filter);
   font-size: 10px;
   font-weight: 700;
   cursor: pointer;
@@ -266,14 +352,14 @@ code { color: var(--cyan); }
 .cm-scroller { font-family: var(--mono) !important; line-height: 1.6 !important; }
 .cm-gutters { border-right: 1px solid var(--line) !important; background: var(--panel) !important; color: var(--muted) !important; }
 .cm-activeLineGutter { background: var(--panel-2) !important; color: var(--text) !important; }
-.cm-activeLine { background: rgb(255 255 255 / 2.5%) !important; }
+.cm-activeLine { background: var(--active-line) !important; }
 .cm-cursor { border-left-color: var(--text) !important; }
-.cm-selectionBackground, .cm-focused .cm-selectionBackground, ::selection { background: rgb(122 162 247 / 25%) !important; }
+.cm-selectionBackground, .cm-focused .cm-selectionBackground, ::selection { background: var(--selection) !important; }
 .cm-panels { background: var(--panel) !important; color: var(--text) !important; border-color: var(--line) !important; }
 .cm-panel.cm-search input, .cm-panel.cm-search button { font: inherit; font-size: 11px; }
 .cm-panel.cm-search label { font-size: 11px; }
-.cm-searchMatch { background: rgb(224 175 104 / 25%) !important; outline: 1px solid rgb(224 175 104 / 50%); }
-.cm-searchMatch-selected { background: rgb(224 175 104 / 45%) !important; }
+.cm-searchMatch { background: var(--search-match) !important; outline: 1px solid var(--search-outline); }
+.cm-searchMatch-selected { background: var(--search-current) !important; }
 .cm-tooltip { border: 1px solid var(--line) !important; background: var(--panel) !important; color: var(--text) !important; }
 .cm-tooltip-autocomplete > ul > li[aria-selected] { background: var(--accent-soft) !important; color: var(--accent) !important; }
 /* \cite{ completion: each key with its title, authors, venue and year; what matched is marked and named. */
@@ -283,7 +369,7 @@ code { color: var(--cyan); }
 .cm-cite > div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cm-cite-title { color: var(--text); }
 .cm-cite mark, .cm-tooltip-autocomplete .cm-completionMatchedText {
-  background: rgb(224 175 104 / 22%); color: var(--yellow); text-decoration: none;
+  background: var(--mark); color: var(--yellow); text-decoration: none;
 }
 .cm-cite-tag {
   display: inline-block; margin-right: 5px; padding: 0 3px; border: 1px solid var(--yellow);
@@ -292,18 +378,18 @@ code { color: var(--cyan); }
 .cm-completionInfo:has(.cm-cite-raw) { max-width: min(560px, 45vw) !important; }
 .cm-cite-raw { margin: 0; font: 11px/1.4 var(--mono); white-space: pre-wrap; word-break: break-word; color: var(--text); }
 .cm-ySelectionInfo { font-family: var(--mono) !important; font-size: 10px !important; padding: 1px 4px !important; opacity: 1 !important; top: -1.3em !important; }
-.cm-ySelectionCaret { border-left-width: 2px !important; }
-.cm-lint-line { background: rgb(247 118 142 / 8%); }
+.cm-ySelectionCaret { border-left-width: 2px !important; filter: var(--caret-filter); }
+.cm-lint-line { background: var(--lint-line); }
 .cm-flash-line { animation: flash 1.4s ease-out; }
-@keyframes flash { from { background: rgb(224 175 104 / 35%); } to { background: transparent; } }
+@keyframes flash { from { background: var(--flash); } to { background: transparent; } }
 
 /* ---------------------------------------------------------------- comments */
 
-/* In the text: a highlighter stroke in the author's colour. */
+/* In the text: a highlighter stroke in the author's colour. A click here
+   places the caret. The thread opens from the gutter's speech bubble. */
 .cm-comment-range {
-  background: color-mix(in srgb, var(--c) 18%, transparent);
-  border-bottom: 2px solid color-mix(in srgb, var(--c) 70%, transparent);
-  cursor: pointer;
+  background: color-mix(in srgb, var(--c-ink) var(--comment-fill), transparent);
+  border-bottom: 2px solid color-mix(in srgb, var(--c-ink) var(--comment-line), transparent);
 }
 /* In the gutter: a speech bubble per line, like a breakpoint. */
 .cm-comment-gutter { width: 18px; }
@@ -316,8 +402,8 @@ code { color: var(--cyan); }
   margin-top: 2px;
   place-items: center;
   border-radius: 3px 3px 3px 0;
-  background: var(--c);
-  color: var(--bg);
+  background: var(--c-ink);
+  color: var(--on-color);
   font: 700 8px/1 var(--mono);
   cursor: pointer;
   position: relative;
@@ -327,12 +413,12 @@ code { color: var(--cyan); }
   position: absolute;
   left: 0;
   bottom: -3px;
-  border-top: 3px solid var(--c);
+  border-top: 3px solid var(--c-ink);
   border-right: 4px solid transparent;
 }
 .cm-comment-marker:hover { filter: brightness(1.2); outline: 1px solid var(--text); }
 .cm-tooltip.cm-comment-tip-host, .cm-comment-tip { background: transparent !important; border: 0 !important; }
-.cm-comment-tip button { padding: 2px 8px; border-color: var(--yellow); background: var(--panel); color: var(--yellow); font-size: 11px; box-shadow: 0 4px 14px rgb(0 0 0 / 50%); }
+.cm-comment-tip button { padding: 2px 8px; border-color: var(--yellow); background: var(--panel); color: var(--yellow); font-size: 11px; box-shadow: 0 4px 14px rgb(0 0 0 / calc(50% * var(--shadow-k))); }
 .cm-comment-tip button:hover { background: var(--panel-2) !important; border-color: var(--yellow) !important; }
 
 .comment-popover {
@@ -347,11 +433,13 @@ code { color: var(--cyan); }
   padding: 10px 12px;
   border: 1px solid var(--line);
   background: var(--panel);
-  box-shadow: 0 14px 38px rgb(0 0 0 / 55%);
+  box-shadow: 0 14px 38px rgb(0 0 0 / calc(55% * var(--shadow-k)));
 }
 .comment-popover .actions { display: flex; justify-content: flex-end; gap: 6px; }
 .thread-head { display: flex; align-items: center; gap: 6px; }
-.thread-where { color: var(--accent); font-size: 11px; cursor: pointer; }
+.thread-head > button { flex: none; }
+/* A long path gives way, so the thread's buttons stay in view. */
+.thread-where { overflow: hidden; min-width: 0; color: var(--accent); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .thread-where:hover { text-decoration: underline; }
 .thread-quote {
   overflow: hidden;
@@ -389,8 +477,8 @@ code { color: var(--cyan); }
 .pdf-comment-mark {
   position: absolute;
   z-index: 1;
-  background: color-mix(in srgb, var(--c) 28%, transparent);
-  border-bottom: 2px solid var(--c);
+  background: color-mix(in srgb, var(--c-ink) var(--comment-fill-pdf), transparent);
+  border-bottom: 2px solid var(--c-ink);
   mix-blend-mode: multiply;
   cursor: pointer;
 }
@@ -402,12 +490,12 @@ code { color: var(--cyan); }
   padding: 0;
   border: 1px solid rgb(0 0 0 / 35%);
   border-radius: 4px 4px 4px 0;
-  background: var(--c);
+  background: var(--c-ink);
   box-shadow: 0 1px 4px rgb(0 0 0 / 40%);
   cursor: pointer;
 }
-.pdf-pin:hover, .pdf-pin.hot { transform: scale(1.25); background: var(--c) !important; border-color: #000 !important; }
-.pdf-comment-mark.hot { background: color-mix(in srgb, var(--c) 55%, transparent); outline: 1px solid var(--c); }
+.pdf-pin:hover, .pdf-pin.hot { transform: scale(1.25); background: var(--c-ink) !important; border-color: #000 !important; }
+.pdf-comment-mark.hot { background: color-mix(in srgb, var(--c-ink) var(--comment-fill-hot), transparent); outline: 1px solid var(--c-ink); }
 
 /* ---------------------------------------------------------------- viewer */
 
@@ -427,25 +515,25 @@ code { color: var(--cyan); }
 .viewer-tabs .tab:hover { background: var(--panel-2); border-color: var(--line); }
 .viewer-tabs .tab.active { background: var(--bg); color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
 .viewer-tabs .tab .count { padding: 0 4px; font-size: 10px; }
-.viewer-tabs .tab .count.err { background: var(--danger); color: var(--bg); }
-.viewer-tabs .tab .count.warn { background: var(--yellow); color: var(--bg); }
+.viewer-tabs .tab .count.err { background: var(--danger); color: var(--on-color); }
+.viewer-tabs .tab .count.warn { background: var(--yellow); color: var(--on-color); }
 .viewer-tabs .tab .close { color: var(--muted); }
 .viewer-tabs .tab .close:hover { color: var(--text); }
 .viewer-tabs .tab span.fname { overflow: hidden; text-overflow: ellipsis; }
 .viewer-tabs .tools { display: flex; align-items: center; gap: 4px; margin-left: auto; padding: 0 6px; }
 .viewer-tabs .tools .zoom { min-width: 44px; color: var(--dim); text-align: center; font-size: 11px; }
 
-.viewer-body { position: relative; flex: 1; min-height: 0; overflow: hidden; background: #0f0f15; }
+.viewer-body { position: relative; flex: 1; min-height: 0; overflow: hidden; background: var(--viewer-bg); }
 .pdf-scroll { position: absolute; inset: 0; overflow: auto; }
 .pdf-pages { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 12px; min-width: fit-content; }
-.pdf-page { position: relative; flex: none; background: #fff; box-shadow: 0 2px 10px rgb(0 0 0 / 50%); }
+.pdf-page { position: relative; flex: none; background: #fff; box-shadow: 0 2px 10px rgb(0 0 0 / calc(50% * var(--shadow-k))); }
 .pdf-page canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .pdf-marker {
   position: absolute;
   left: 0;
   right: 0;
   height: 18px;
-  background: rgb(224 175 104 / 35%);
+  background: var(--flash);
   pointer-events: none;
   animation: fadeout 1.8s ease-out forwards;
 }
@@ -454,8 +542,8 @@ code { color: var(--cyan); }
 .viewer-empty .big { margin-bottom: 8px; color: var(--dim); font-size: 13px; }
 .viewer-empty button { margin-top: 10px; }
 .image-view { display: grid; position: absolute; inset: 0; overflow: auto; place-items: center; padding: 16px;
-  background: repeating-conic-gradient(#1c1d27 0% 25%, #16161e 0% 50%) 50% / 20px 20px; }
-.image-view img { max-width: 100%; max-height: 100%; box-shadow: 0 2px 10px rgb(0 0 0 / 50%); }
+  background: repeating-conic-gradient(var(--checker-a) 0% 25%, var(--checker-b) 0% 50%) 50% / 20px 20px; }
+.image-view img { max-width: 100%; max-height: 100%; box-shadow: 0 2px 10px rgb(0 0 0 / calc(50% * var(--shadow-k))); }
 .image-view.actual img { max-width: none; max-height: none; }
 .file-info { display: grid; position: absolute; inset: 0; place-items: center; color: var(--dim); text-align: center; }
 
@@ -495,7 +583,7 @@ code { color: var(--cyan); }
 .history-item.selected { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
 .history-item .when { color: var(--dim); font-size: 10.5px; }
 .history-item .who { display: flex; flex-wrap: wrap; gap: 4px 8px; margin: 2px 0; }
-.history-item .who span::before { content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 4px; background: var(--c); }
+.history-item .who span::before { content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 4px; background: var(--c-ink); }
 .history-item .files { overflow: hidden; color: var(--muted); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
 .history-label {
   display: flex;
@@ -503,11 +591,11 @@ code { color: var(--cyan); }
   gap: 8px;
   padding: 6px 12px;
   border-bottom: 1px solid var(--line);
-  background: rgb(224 175 104 / 8%);
+  background: color-mix(in srgb, var(--yellow) 8%, transparent);
   color: var(--yellow);
   cursor: pointer;
 }
-.history-label:hover { background: rgb(224 175 104 / 14%); }
+.history-label:hover { background: color-mix(in srgb, var(--yellow) 14%, transparent); }
 .history-label.selected { box-shadow: inset 2px 0 0 var(--yellow); }
 .history-label .tag { padding: 0 5px; border: 1px solid var(--yellow); font-size: 9.5px; letter-spacing: .06em; text-transform: uppercase; }
 .history-label .msg { overflow: hidden; flex: 1; text-overflow: ellipsis; white-space: nowrap; }
@@ -523,10 +611,10 @@ code { color: var(--cyan); }
 .history-actions .info { color: var(--dim); font-size: 11px; }
 .history-diff { position: relative; flex: 1; min-height: 0; overflow: auto; }
 .history-diff .cm-editor { height: 100%; }
-.cm-changedLine, .cm-insertedLine { background: rgb(158 206 106 / 10%) !important; }
-.cm-changedText, .cm-insertedLine .cm-changedText { background: rgb(158 206 106 / 30%) !important; }
-.cm-deletedChunk { background: rgb(247 118 142 / 10%) !important; }
-.cm-deletedChunk .cm-deletedText, .cm-deletedChunk del { background: rgb(247 118 142 / 30%) !important; text-decoration: none; }
+.cm-changedLine, .cm-insertedLine { background: var(--diff-add) !important; }
+.cm-changedText, .cm-insertedLine .cm-changedText { background: var(--diff-add-strong) !important; }
+.cm-deletedChunk { background: var(--diff-del) !important; }
+.cm-deletedChunk .cm-deletedText, .cm-deletedChunk del { background: var(--diff-del-strong) !important; text-decoration: none; }
 .cm-deletedChunk { padding-left: 6px; color: var(--dim); }
 
 /* ---------------------------------------------------------------- dialogs */
@@ -537,7 +625,7 @@ code { color: var(--cyan); }
   inset: 0;
   z-index: 1000;
   padding: 28px;
-  background: rgb(4 5 8 / 78%);
+  background: var(--overlay);
   backdrop-filter: blur(6px);
   place-items: center;
 }
@@ -551,7 +639,7 @@ code { color: var(--cyan); }
   padding: 18px;
   border: 1px solid var(--line);
   background: var(--panel);
-  box-shadow: 0 14px 38px rgb(0 0 0 / 55%);
+  box-shadow: 0 14px 38px rgb(0 0 0 / calc(55% * var(--shadow-k)));
 }
 .dialog.wide { width: min(760px, calc(100vw - 56px)); }
 .dialog h2 { margin: 0; color: var(--accent); font: 600 13px var(--mono); letter-spacing: .08em; text-transform: uppercase; }
@@ -565,7 +653,7 @@ code { color: var(--cyan); }
   margin: 0;
   padding: 10px 12px;
   border: 1px solid var(--line);
-  background: #0b0d12;
+  background: var(--code-bg);
   color: var(--green);
   font: 11.5px/1.5 var(--mono);
   white-space: pre-wrap;
@@ -578,7 +666,7 @@ code { color: var(--cyan); }
   overflow: auto;
   padding: 8px 10px;
   border: 1px solid var(--line);
-  background: #0b0d12;
+  background: var(--code-bg);
   color: var(--dim);
   font: 11px/1.45 var(--mono);
   white-space: pre-wrap;
@@ -595,7 +683,7 @@ code { color: var(--cyan); }
   padding: 4px 0;
   border: 1px solid var(--line);
   background: var(--panel);
-  box-shadow: 0 10px 30px rgb(0 0 0 / 50%);
+  box-shadow: 0 10px 30px rgb(0 0 0 / calc(50% * var(--shadow-k)));
 }
 .menu button, .menu label.item {
   display: flex;
@@ -625,7 +713,7 @@ code { color: var(--cyan); }
   padding: 9px 12px;
   border: 1px solid var(--line);
   background: var(--panel);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+  box-shadow: 0 8px 24px rgb(0 0 0 / calc(45% * var(--shadow-k)));
 }
 .toast.bad { border-color: var(--danger); color: var(--danger); }
 .toast.ok { border-color: var(--green); }
@@ -637,7 +725,7 @@ code { color: var(--cyan); }
   z-index: 900;
   place-items: center;
   border: 2px dashed var(--accent);
-  background: rgb(22 22 30 / 80%);
+  background: var(--drop-overlay);
   color: var(--accent);
   font-size: 15px;
   pointer-events: none;
@@ -654,7 +742,7 @@ code { color: var(--cyan); }
   inset: 0;
   z-index: 950;
   place-items: center;
-  background: rgb(4 5 8 / 82%);
+  background: var(--overlay-strong);
   backdrop-filter: blur(8px);
 }
 .picker-overlay.landing { background: var(--bg); backdrop-filter: none; }
@@ -667,7 +755,7 @@ code { color: var(--cyan); }
   flex-direction: column;
   border: 1px solid var(--line);
   background: var(--panel);
-  box-shadow: 0 24px 90px rgb(0 0 0 / 65%);
+  box-shadow: 0 24px 90px rgb(0 0 0 / calc(65% * var(--shadow-k)));
   outline: none;
   overflow: hidden;
 }
@@ -756,7 +844,7 @@ button.picker-row.active { border-color: var(--accent); }
 
 button.busy { opacity: .75; cursor: progress; }
 .statusbar .flash { animation: flash-text 1.2s ease-out; }
-@keyframes flash-text { from { color: var(--text); background: rgb(158 206 106 / 20%); } to { background: transparent; } }
+@keyframes flash-text { from { color: var(--text); background: color-mix(in srgb, var(--green) 20%, transparent); } to { background: transparent; } }
 .viewer-tabs .loading { padding: 0 6px; color: var(--yellow); font-size: 10.5px; }
 .pane-toggle { display: none; }
 
@@ -842,11 +930,11 @@ button.busy { opacity: .75; cursor: progress; }
 .deploy-key .agent-text { max-height: 260px; overflow: auto; color: var(--text); user-select: text; }
 
 /* Authors view: the text tinted by who last wrote it. */
-.cm-author { background: color-mix(in srgb, var(--c) 16%, transparent); box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--c) 55%, transparent); }
+.cm-author { background: color-mix(in srgb, var(--c-ink) var(--author-fill), transparent); box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--c-ink) 55%, transparent); }
 .authors-toggle.on { border-color: var(--accent) !important; color: var(--accent); background: var(--accent-soft); }
 .authors-legend { display: flex; gap: 8px; overflow: hidden; }
 .authors-chip { display: inline-flex; align-items: center; gap: 4px; color: var(--dim); font-size: 10.5px; white-space: nowrap; }
-.authors-chip::before { content: ''; width: 8px; height: 8px; background: var(--c); }
+.authors-chip::before { content: ''; width: 8px; height: 8px; background: var(--c-ink); }
 
 /* ------------------------------------------------------------ chat */
 .chat-view { position: absolute; inset: 0; display: flex; flex-direction: column; }
@@ -868,7 +956,7 @@ button.busy { opacity: .75; cursor: progress; }
 .chat-choice { display: flex; justify-content: space-between; gap: 12px; padding: 4px 8px; cursor: pointer; }
 .chat-choice.active, .chat-choice:hover { background: var(--panel-2); }
 .chat-choice .hint { color: var(--muted); font-size: 10.5px; }
-.viewer-tabs .tab .count.mention { background: var(--yellow); color: var(--bg); }
+.viewer-tabs .tab .count.mention { background: var(--yellow); color: var(--on-color); }
 
 /* Trash dialogs */
 .trash-list { max-height: 50vh; overflow: auto; margin: 8px 0; }
