@@ -279,9 +279,12 @@ code { color: var(--cyan); }
 
 .body {
   display: grid;
-  grid-template-columns: var(--tree-w, 240px) 4px minmax(200px, 1fr) 4px var(--viewer-w, 45%);
+  grid-template-columns: var(--tree-w, 280px) 4px minmax(200px, 1fr) 4px var(--viewer-w, 45%);
   min-height: 0;
 }
+/* The side panel hidden: the editor and the PDF share the width. */
+.body.side-hidden { grid-template-columns: minmax(200px, 1fr) 4px var(--viewer-w, 45%); }
+.body.side-hidden > .side-pane, .body.side-hidden > .splitter.left { display: none; }
 .splitter { background: var(--line); cursor: col-resize; }
 .splitter:hover, .splitter.dragging { background: var(--accent); }
 
@@ -301,6 +304,18 @@ code { color: var(--cyan); }
 }
 .pane-head .label { color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-size: 10.5px; }
 .pane-head .path { overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+
+/* ---------------------------------------------------------------- side panel */
+
+.side-pane { background: var(--panel); }
+.side-tabs .tab { padding: 0 10px; }
+.side-body { position: relative; flex: 1; min-height: 0; }
+.side-slot { position: absolute; inset: 0; display: none; flex-direction: column; }
+.side-slot.active { display: flex; }
+.side-slot > .pane { flex: 1; }
+.icon-svg { display: inline-flex; vertical-align: -2px; }
+.toolbar .side-toggle { padding: 3px 6px; color: var(--dim); }
+.toolbar .side-toggle.on { border-color: transparent; color: var(--accent); }
 
 /* ---------------------------------------------------------------- tree */
 
@@ -574,7 +589,7 @@ code { color: var(--cyan); }
 .history {
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr);
-  grid-column: 3 / 6;
+  grid-column: -4 / -1;
   min-height: 0;
 }
 .history-list { overflow: auto; border-right: 1px solid var(--line); background: var(--panel); }
@@ -854,7 +869,7 @@ button.busy { opacity: .75; cursor: progress; }
   /* One pane at a time: a flex row, so hidden panes leave no empty columns. */
   .body { display: flex; }
   .body > .pane, .body > .history { flex: 1; min-width: 0; }
-  .body > .tree-pane, .body > .splitter, .body > .viewer-pane { display: none; }
+  .body > .side-pane, .body > .splitter, .body > .viewer-pane { display: none; }
   .body.show-viewer > .viewer-pane { display: flex; }
   .body.show-viewer > .pane:not(.viewer-pane) { display: none; }
   .picker { --picker-columns: minmax(0, 1fr) 90px; width: 100vw; height: 100vh; }

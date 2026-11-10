@@ -7,8 +7,9 @@ literature, etc)", a factory, or a structure. It is the sibling of
 [DeckWerk](https://github.com/vsitzmann/deckwerk), my slide editor, and works
 the same way.
 
-Open the server's address, pick a project, and write: file tree on the left,
-editor in the middle, the compiled PDF on the right. Everyone who has the
+Open the server's address, pick a project, and write: a side panel with the
+file tree, the comments and the chat on the left, editor in the middle, the
+compiled PDF on the right. Everyone who has the
 project open sees everyone else's caret and edits live. Bring your own agent
 (Claude Code, Codex, …) or your own editor with one command that mirrors the
 project into a local folder and keeps it in sync both ways.
@@ -110,7 +111,7 @@ must not be exposed to the open internet.
   text gets a highlight in the author's colour and a speech-bubble mark in
   the gutter; the PDF gets a pin in the margin at the same place (via
   SyncTeX). Threads are conversations: reply, edit, resolve, reopen. The
-  **Comments** tab lists them — open ones in document order, resolved ones
+  **Comments** tab of the side panel lists them, next to the PDF — open ones in document order, resolved ones
   greyed at the bottom — and jumps to the text. **Link** on a thread copies
   an address (`?project=…&comment=<id>`) that opens the project at that
   thread, for anyone who has access to the project. View-only people can comment.
@@ -120,6 +121,10 @@ must not be exposed to the open internet.
   + comments** or **Compiled PDF with comments** (real PDF sticky notes).
   Agents see them in `.texwerk/comments.md` and use `node .texwerk/tw
   comments | comment | reply | resolve`.
+- **Side panel.** Files, Comments and Chat are tabs in the left column, so
+  the PDF stays in view on the right. The sidebar button left of the project
+  name, or Ctrl+Alt+B, hides the whole panel and gives its width to the
+  editor and the PDF. The browser remembers the tab and whether the panel shows.
 - **Chat.** The **Chat** tab next to **Comments** is a running conversation
   for the whole project, open to view-only people too. Enter sends,
   Shift+Enter starts a new line, `@` completes the names of the people here

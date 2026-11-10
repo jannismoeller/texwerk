@@ -68,7 +68,7 @@ try {
   await check('the Link button copies an address that opens the thread', async () => {
     await page.goto(`${origin}/${q}`);
     await page.waitForSelector('.cm-content');
-    await page.locator('.viewer-tabs .tab', { hasText: 'Comments' }).click();
+    await page.locator('.side-tabs .tab', { hasText: 'Comments' }).click();
     await page.locator(`.thread-card[data-id="${id}"] button`, { hasText: 'Link' }).click();
     const link = await page.evaluate(() => navigator.clipboard.readText());
     assert.equal(link, `${origin}/?project=${encodeURIComponent(project)}&comment=${id}`);
@@ -79,7 +79,7 @@ try {
     await page.waitForSelector('.cm-content');
     await page.goto(link);
     await page.waitForSelector(`.thread-card.selected[data-id="${id}"]`);
-    assert.equal(await page.locator('.viewer-tabs .tab.active').textContent().then((t) => t?.startsWith('Comments')), true);
+    assert.equal(await page.locator('.side-tabs .tab.active').textContent().then((t) => t?.startsWith('Comments')), true);
     assert.equal(await page.locator('.editor-host').count(), 1);
     await page.waitForFunction(() => document.querySelector('.pane .path')?.textContent === 'main.tex');
     assert.ok(!new URL(page.url()).searchParams.has('comment'), 'the comment parameter is dropped after use');
@@ -95,11 +95,11 @@ try {
   await check('double-clicking a word shows it in the PDF', async () => {
     await page.goto(`${origin}/${q}&file=main.tex`);
     await page.waitForSelector('.cm-content');
-    await page.locator('.viewer-tabs .tab', { hasText: 'Comments' }).click();
+    await page.locator('.side-tabs .tab', { hasText: 'Comments' }).click();
     await page.waitForTimeout(500);
     await page.locator('.cm-line', { hasText: 'commented sentence' }).getByText('focal', { exact: false }).first().dblclick();
     await page.waitForSelector('.pdf-marker', { timeout: 5000 });
-    assert.equal(await page.locator('.viewer-tabs .tab.active').textContent(), 'PDF');
+    assert.equal(await page.locator('.viewer-pane .viewer-tabs .tab.active').textContent(), 'PDF');
     const selected = await page.evaluate(() => getSelection()?.toString() ?? '');
     assert.ok(selected.length > 0, 'the double-click still selects the word');
   });

@@ -13,9 +13,10 @@ import { authorRuns } from '@shared/provenance.ts';
 import { findInclude, graphicsPaths, resolveGraphic } from '@shared/figures.ts';
 import type { AuthorInfo } from '@shared/protocol.ts';
 import type { CommentThread } from '@shared/comments.ts';
-import { api, ApiError, copyText, dialog, h, initials, menu, menuAt, storedName, storeName, toast, withName } from './ui.ts';
+import { api, ApiError, copyText, dialog, h, icon, initials, menu, menuAt, storedName, storeName, toast, withName } from './ui.ts';
 import { showPicker, showShareDialog, type Me } from './picker.ts';
 import { currentTheme, setTheme } from './theme.ts';
+import { SidePanel } from './sidePanel.ts';
 
 /**
  * The project editor: file tree | code editor | PDF viewer, with live
@@ -74,8 +75,12 @@ export async function renderEditor(app: HTMLElement, project: string, meInfo: Me
   });
   const roBadge = h('span', { class: 'readonly-badge', title: 'You have view-only access to this project', hidden: true }, 'view only');
   const titleEl = h('span', { class: 'title', title: project }, projectName);
+  // Shows and hides the side panel (files, comments, chat).
+  const sideBtn = h('button', { class: 'ghost icon side-toggle', title: 'Show or hide the side panel with files, comments and chat (Ctrl+Alt+B)' }, icon('sidebar'));
+  sideBtn.addEventListener('click', () => side.toggle());
   const toolbar = h('div', { class: 'toolbar' },
     brand,
+    sideBtn,
     h('span', { class: 'sep' }),
     titleEl,
     roBadge,
@@ -182,7 +187,6 @@ export async function renderEditor(app: HTMLElement, project: string, meInfo: Me
     onSyncFromCursor: () => void syncToPdf(),
     onPinClick: (id, rect) => comments.openThread(id, rect),
     onPdfLoaded: () => schedulePins(0),
-    onTabChange: (tab) => { if (tab === 'chat') chat.shown(); },
     onSlowPages: (pages) => { slowPages = pages; renderPdfInfo(); },
     onFigureDoubleClick: (click) => void figureMenu(click),
   });
@@ -272,14 +276,13 @@ export async function renderEditor(app: HTMLElement, project: string, meInfo: Me
     me: () => me,
     canModerate: () => meInfo.admin,
     reveal: (t) => revealThread(t),
-    showList: () => viewer.showTab('comments'),
+    showList: () => side.show('comments'),
     onChange: () => {
       updateEditorComments();
-      viewer.setCommentsPanel(comments.panel, comments.openCount);
+      side.setCommentCount(comments.openCount);
       schedulePins(500);
     },
   });
-  viewer.setCommentsPanel(comments.panel, comments.openCount);
 
   // ------------------------------------------------------------ chat
   const chat = new Chat({
@@ -287,7 +290,7 @@ export async function renderEditor(app: HTMLElement, project: string, meInfo: Me
     doc,
     me: () => me,
     present: () => [...new Set([...(awareness.getStates() as Map<number, PeerState>).values()].map((s) => s.user?.name).filter((n): n is string => Boolean(n)))],
-    visible: () => viewer.activeTab === 'chat',
+    visible: () => side.visibleTab === 'chat',
     isFile: (path) => texts.has(path) || bins.has(path),
     openRef: (ref) => {
       if ('commentId' in ref) goToThread(ref.commentId);
@@ -295,11 +298,23 @@ export async function renderEditor(app: HTMLElement, project: string, meInfo: Me
       else toast(`"${ref.file}" is not a text file in this project.`);
     },
     onChange: () => {
-      viewer.setChatPanel(chat.panel, chat.unread, chat.mentioned > 0);
+      side.setChatUnread(chat.unread, chat.mentioned > 0);
       updateDocumentTitle();
     },
   });
-  viewer.setChatPanel(chat.panel, chat.unread, chat.mentioned > 0);
+  // Files, comments and chat share the left column; PDF and log keep the right.
+  const side = new SidePanel({
+    files: tree.root,
+    comments: comments.panel,
+    chat: chat.panel,
+    onChange: (tab) => {
+      if (tab === 'chat') chat.shown();
+      sideBtn.classList.toggle('on', !side.hidden);
+      body.classList.toggle('side-hidden', side.hidden);
+    },
+  });
+  side.setCommentCount(comments.openCount);
+  side.setChatUnread(chat.unread, chat.mentioned > 0);
   function updateDocumentTitle(): void {
     document.title = `${chat.titlePrefix}${projectName} — TeXWerk`;
   }
@@ -315,7 +330,7 @@ export async function renderEditor(app: HTMLElement, project: string, meInfo: Me
   function goToThread(id: string): void {
     const t = comments.find(id);
     if (!t) { toast('That comment no longer exists.'); return; }
-    viewer.showTab('comments');
+    side.show('comments');
     comments.select(t.id);
     revealThread(t);
   }
@@ -352,9 +367,10 @@ export async function renderEditor(app: HTMLElement, project: string, meInfo: Me
     } catch { /* no synctex: no pins */ }
   }
 
-  const leftSplit = h('div', { class: 'splitter' });
+  const leftSplit = h('div', { class: 'splitter left' });
   const rightSplit = h('div', { class: 'splitter right' });
-  const body = h('div', { class: 'body' }, tree.root, leftSplit, editorPane, rightSplit, viewer.root);
+  const body = h('div', { class: `body${side.hidden ? ' side-hidden' : ''}` }, side.root, leftSplit, editorPane, rightSplit, viewer.root);
+  sideBtn.classList.toggle('on', !side.hidden);
   const shell = h('div', { class: 'shell' }, toolbar, h('div'), body, statusbar);
   app.replaceChildren(shell);
   restoreLayout(body);
@@ -1070,6 +1086,8 @@ export async function renderEditor(app: HTMLElement, project: string, meInfo: Me
   // ------------------------------------------------------------ keys
   window.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'Enter')) { e.preventDefault(); void runCompile(); }
+    // Ctrl+B is bold in the editor and Ctrl+Shift+B the browser's bookmarks bar.
+    if (e.ctrlKey && e.altKey && !e.shiftKey && !e.metaKey && e.key.toLowerCase() === 'b') { e.preventDefault(); side.toggle(); }
   });
 
 }
@@ -1092,7 +1110,7 @@ function bindSplitter(handle: HTMLElement, body: HTMLElement, side: 'left' | 'ri
     const rect = body.getBoundingClientRect();
     const move = (ev: PointerEvent) => {
       if (side === 'left') {
-        const w = Math.max(140, Math.min(500, ev.clientX - rect.left));
+        const w = Math.max(160, Math.min(600, ev.clientX - rect.left));
         body.style.setProperty('--tree-w', `${w}px`);
       } else {
         const w = Math.max(240, Math.min(rect.width - 400, rect.right - ev.clientX));

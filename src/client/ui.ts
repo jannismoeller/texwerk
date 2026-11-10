@@ -17,6 +17,24 @@ export function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Attrs = 
   return node;
 }
 
+// ------------------------------------------------------------- icons
+
+/** Line icons, 16 units square, drawn in the current text colour. */
+const ICONS = {
+  sidebar: '<rect x="1.5" y="2.5" width="13" height="11"/><path d="M6 2.5v11"/>',
+  sun: '<circle cx="8" cy="8" r="3"/><path d="M8 1v1.6M8 13.4V15M1 8h1.6M13.4 8H15M3.05 3.05l1.13 1.13M11.82 11.82l1.13 1.13M3.05 12.95l1.13-1.13M11.82 4.18l1.13-1.13"/>',
+  moon: '<path d="M13.5 9.6A5.6 5.6 0 0 1 6.4 2.5a5.6 5.6 0 1 0 7.1 7.1z"/>',
+  check: '<path d="M3 8.5l3.2 3L13 4.5"/>',
+} as const;
+
+export type IconName = keyof typeof ICONS;
+
+export function icon(name: IconName): HTMLElement {
+  const span = h('span', { class: 'icon-svg', 'aria-hidden': 'true' });
+  span.innerHTML = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`;
+  return span;
+}
+
 // ------------------------------------------------------------- identity
 
 const NAME_KEY = 'texwerk-name';

@@ -17,7 +17,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
  * supports SyncTeX both ways.
  */
 
-export type Tab = 'pdf' | 'log' | 'comments' | 'chat' | 'file';
+export type Tab = 'pdf' | 'log' | 'file';
 
 interface TextRun {
   str: string;
@@ -153,7 +153,7 @@ export interface ViewerOptions {
   onPinClick: (id: string, rect: DOMRect) => void;
   /** A new PDF finished loading (pins need fresh positions). */
   onPdfLoaded: () => void;
-  /** The visible tab changed (the chat marks itself read). */
+  /** The visible tab changed. */
   onTabChange?: (tab: Tab) => void;
   /** A figure in the compiled PDF was double-clicked (instead of jumping to the source). */
   onFigureDoubleClick?: (click: FigureClick) => void;
@@ -499,11 +499,6 @@ export class Viewer {
   private showRaw = false;
   private readonly opts: ViewerOptions;
   private lastPdfRev = -1;
-  private commentsPanel: HTMLElement | null = null;
-  private commentCount = 0;
-  private chatPanel: HTMLElement | null = null;
-  private chatUnread = 0;
-  private chatMentioned = false;
   /** The PDF being downloaded, and how far along it is. */
   private pdfLoad: { loaded: number; total: number } | null = null;
   /** The newest PDF could not be loaded, and no older one is showing. */
@@ -581,23 +576,6 @@ export class Viewer {
     return this.pdf.loaded;
   }
 
-  setCommentsPanel(panel: HTMLElement, openCount: number): void {
-    this.commentsPanel = panel;
-    if (openCount !== this.commentCount) {
-      this.commentCount = openCount;
-      this.renderTabs();
-    }
-  }
-
-  setChatPanel(panel: HTMLElement, unread: number, mentioned: boolean): void {
-    this.chatPanel = panel;
-    if (unread !== this.chatUnread || mentioned !== this.chatMentioned) {
-      this.chatUnread = unread;
-      this.chatMentioned = mentioned;
-      this.renderTabs();
-    }
-  }
-
   get activeTab(): Tab {
     return this.tab;
   }
@@ -656,8 +634,6 @@ export class Viewer {
       tab('log', 'Log',
         errors ? h('span', { class: 'count err' }, String(errors)) : null,
         !errors && warnings ? h('span', { class: 'count warn' }, String(warnings)) : null),
-      tab('comments', 'Comments', this.commentCount ? h('span', { class: 'count' }, String(this.commentCount)) : null),
-      tab('chat', 'Chat', this.chatUnread ? h('span', { class: `count${this.chatMentioned ? ' mention' : ''}`, title: this.chatMentioned ? 'Unread, and you were mentioned' : 'Unread messages' }, String(this.chatUnread)) : null),
     ];
     if (this.file) {
       const close = h('span', { class: 'close', title: 'Close' }, '×');
@@ -697,10 +673,6 @@ export class Viewer {
     } else if (this.tab === 'log') {
       this.renderLog();
       content.push(this.logView);
-    } else if (this.tab === 'comments' && this.commentsPanel) {
-      content.push(this.commentsPanel);
-    } else if (this.tab === 'chat' && this.chatPanel) {
-      content.push(this.chatPanel);
     } else if (this.file) {
       this.renderFile();
       content.push(this.fileView);
