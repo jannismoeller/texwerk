@@ -175,6 +175,8 @@ export interface ViewerOptions {
   onCloseFile: () => void;
   onSyncFromCursor: () => void;
   onPinClick: (id: string, rect: DOMRect) => void;
+  /** A comment's mark or bubble in the PDF was double-clicked: go to its text in the source. */
+  onPinDoubleClick?: (id: string) => void;
   /** A new PDF finished loading (pins need fresh positions). */
   onPdfLoaded: () => void;
   /** The visible tab changed. */
@@ -200,6 +202,9 @@ class PdfView {
   onZoom: (() => void) | null = null;
   onDoubleClick: ((page: number, x: number, y: number, clientX: number, clientY: number) => void) | null = null;
   onPinClick: ((id: string, rect: DOMRect) => void) | null = null;
+  onPinDoubleClick: ((id: string) => void) | null = null;
+  /** The last click on a comment's mark or bubble, to tell a double-click on it. */
+  private pinClick: { id: string; x: number; y: number; time: number } | null = null;
   onCommentSelection: ((selection: PdfSelection) => void) | null = null;
   /** The Comment button beside text selected in the PDF. */
   private readonly commentTip = h('button', { class: 'pdf-comment-tip', title: 'Comment on the selected text (Ctrl+Alt+M)' }, 'Comment');
@@ -265,7 +270,11 @@ class PdfView {
       const p = this.pages[pin.page - 1];
       if (!p) continue;
       const s = this.scale;
-      const open = (e: Event, anchor: HTMLElement) => { e.stopPropagation(); this.onPinClick?.(pin.id, anchor.getBoundingClientRect()); };
+      const open = (e: MouseEvent, anchor: HTMLElement) => {
+        e.stopPropagation();
+        this.pinClick = { id: pin.id, x: e.clientX, y: e.clientY, time: e.timeStamp };
+        this.onPinClick?.(pin.id, anchor.getBoundingClientRect());
+      };
       const marks = pin.marks.flatMap((r) => {
         const on = this.pages[r.page - 1];
         if (!on) return [];
@@ -287,7 +296,8 @@ class PdfView {
       p.el.append(bubble);
       const all = [...marks, bubble];
       for (const el of all) {
-        el.addEventListener('click', (e) => open(e, el));
+        el.addEventListener('click', (e) => open(e as MouseEvent, el));
+        // The second click already went to the comment's text (see the constructor), not SyncTeX's line.
         el.addEventListener('dblclick', (e) => e.stopPropagation());
         el.addEventListener('mouseenter', () => { for (const x of all) x.classList.add('hot'); });
         el.addEventListener('mouseleave', () => { for (const x of all) x.classList.remove('hot'); });
@@ -303,6 +313,26 @@ class PdfView {
       }
     }, { root: this.scroll, rootMargin: '600px 0px' });
     new ResizeObserver(() => { if (this.fitWidth && this.doc) this.applyScale(this.fitScale()); }).observe(this.scroll);
+    // A double-click on a comment's mark jumps to the comment's text. The
+    // first click opens the thread's popup, which can cover the mark, so the
+    // second click may land on the popup, even on one of its buttons, and the
+    // browser then sends no dblclick. So the second click on the same spot is
+    // the double-click, and it goes nowhere else.
+    const secondClick = (e: MouseEvent): string | null => {
+      const c = this.pinClick;
+      if (!c || e.detail < 2 || e.timeStamp - c.time > 800 || Math.hypot(e.clientX - c.x, e.clientY - c.y) > 8) return null;
+      return c.id;
+    };
+    window.addEventListener('mousedown', (e) => { if (secondClick(e)) e.preventDefault(); }, true);
+    window.addEventListener('click', (e) => {
+      const id = secondClick(e);
+      if (!id) return;
+      this.pinClick = null;
+      e.preventDefault();
+      e.stopPropagation();
+      getSelection()?.removeAllRanges();
+      this.onPinDoubleClick?.(id);
+    }, true);
     // Selecting text (in the PDF.js text layer) offers a Comment button.
     this.pagesEl.addEventListener('mouseup', () => setTimeout(() => this.showCommentTip()));
     document.addEventListener('selectionchange', () => { if (this.commentTip.isConnected && !this.selection()) this.commentTip.remove(); });
@@ -635,6 +665,7 @@ export class Viewer {
       else void this.syncToSource(page, x, y);
     };
     this.pdf.onPinClick = (id, rect) => this.opts.onPinClick(id, rect);
+    this.pdf.onPinDoubleClick = (id) => this.opts.onPinDoubleClick?.(id);
     if (this.opts.onCommentSelection) this.pdf.onCommentSelection = this.opts.onCommentSelection;
     this.pdf.onPageDrawn = (page, ms, ops) => {
       if (ms < SLOW_PAGE_MS && ops < HEAVY_PAGE_OPS) return;

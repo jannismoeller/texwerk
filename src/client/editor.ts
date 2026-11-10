@@ -196,6 +196,7 @@ export async function renderEditor(app: HTMLElement, project: string, meInfo: Me
     onCloseFile: () => tree.setViewing(null),
     onSyncFromCursor: () => void syncToPdf(),
     onPinClick: (id, rect) => comments.openThread(id, rect),
+    onPinDoubleClick: (id) => comments.reveal(id),
     onPdfLoaded: () => schedulePins(0),
     onSlowPages: (pages) => { slowPages = pages; renderPdfInfo(); },
     onFigureDoubleClick: (click) => void figureMenu(click),

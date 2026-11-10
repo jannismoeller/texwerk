@@ -17,6 +17,9 @@
  * and of no word next to them, and their ends are within MARK_TOLERANCE_PT
  * of the first and last word's ends. The text layer spaces characters with a
  * browser font, so its words are themselves a few points off the glyphs.
+ *
+ * Last, a double-click on a mark goes to the comment's text in the editor,
+ * and its second click does nothing in the popup the first one opened.
  */
 import { strict as assert } from 'node:assert';
 import { chromium } from 'playwright-core';
@@ -175,6 +178,17 @@ try {
     console.log(`${problems.length ? 'FAIL' : 'ok  '} marks of ${c.name}: ${r.marks.length} boxes on ${pages} page(s)${ends}${problems.length ? `: ${problems.join(', ')}` : ''}`);
     if (problems.length) failed = true;
   }
+  // A double-click on a comment's mark jumps to the comment's text in the source.
+  const before = await page.evaluate(() => document.querySelector('.cm-activeLine')?.textContent ?? '');
+  await page.locator(`.pdf-comment-mark[data-thread="${markIds.get('words in the middle of a line')}"]`).first().dblclick();
+  await page.waitForTimeout(800);
+  const after = await page.evaluate(() => document.querySelector('.cm-activeLine')?.textContent ?? '');
+  // The first click opened the popup, which can lie over the mark: the second click must not act in it (Resolve, Link).
+  const id = markIds.get('words in the middle of a line')!;
+  const kept = await page.evaluate((i) => Boolean(document.querySelector('.comment-popover')) && document.querySelectorAll(`.pdf-comment-mark[data-thread="${i}"]`).length > 0, id);
+  const jumped = !before.includes('quintessential') && after.includes('quintessential') && kept;
+  console.log(`${jumped ? 'ok  ' : 'FAIL'} a double-click on a comment mark goes to its text${jumped ? '' : `: line before ${JSON.stringify(before.slice(0, 40))}, after ${JSON.stringify(after.slice(0, 40))}, popup and mark kept ${kept}`}`);
+  if (!jumped) failed = true;
 } finally {
   await browser.close();
 }

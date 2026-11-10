@@ -284,6 +284,12 @@ export class Comments {
     this.markPopover();
   }
 
+  /** Go to a thread's text in the source. */
+  reveal(id: string): void {
+    const t = this.threads.find((x) => x.id === id);
+    if (t) this.opts.reveal(t);
+  }
+
   /** The popup of a thread that had new messages when it opened looks like an unread card. */
   private markPopover(): void {
     this.popover?.classList.toggle('unread', Boolean(this.popoverThread && this.shownUnread.has(this.popoverThread)));

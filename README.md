@@ -198,7 +198,8 @@ must not be exposed to the open internet.
   files by dragging, rename, delete (restorable from history), set the main
   document.
 - **Viewer.** The compiled PDF (PDF.js; keeps your place across recompiles,
-  zoom, SyncTeX both ways: double-click the PDF to jump to the source;
+  zoom, SyncTeX both ways: double-click the PDF to jump to the source
+  (on a comment's mark or bubble, to the comment's own text);
   double-click the source — which still selects the word — or press
   `Ctrl+Alt+→` / ⇢ to jump to that place in the PDF), or the image/PDF
   selected in the file tree. Double-clicking an included figure (an image or
