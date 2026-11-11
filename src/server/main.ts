@@ -5,7 +5,7 @@ import { startServer } from './server.ts';
 /**
  * TeXWerk collaboration server:
  *   npm run serve -- <projectsRootDir> [--port 5810] [--host 0.0.0.0] [--access <adminLogin>] [--allow-host <name>]
- *                    [--projects <name>[,<name>...]]
+ *                    [--projects <name>[,<name>...]] [--no-git]
  *
  * Every top-level folder of <projectsRootDir> is a LaTeX project and a git
  * repository. Binds all interfaces by default so tailnet peers can reach it.
@@ -23,6 +23,10 @@ import { startServer } from './server.ts';
  * opened and are never written to, and no project can be created, imported,
  * cloned, renamed, moved or deleted, so nothing is written into the root.
  * For a project that lives in a folder next to unrelated ones.
+ *
+ * --no-git: no labels, remotes, push, pull, reverts or clones, and no
+ * `git init`. An existing repository only gets `.texwerk/` excluded. For a
+ * project whose repository is managed elsewhere (Overleaf's git bridge).
  */
 const args = process.argv.slice(2);
 let rootDir: string | null = null;
@@ -31,16 +35,18 @@ let host = '0.0.0.0';
 let access: string | null = null;
 const allowHosts: string[] = [];
 let projects: string[] | null = null;
+let git = true;
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--port') port = Number(args[++i]);
   else if (args[i] === '--host') host = args[++i];
   else if (args[i] === '--access') access = args[++i];
   else if (args[i] === '--allow-host') allowHosts.push(...args[++i].split(','));
   else if (args[i] === '--projects') projects = [...(projects ?? []), ...String(args[++i] ?? '').split(',').map((n) => n.trim()).filter(Boolean)];
+  else if (args[i] === '--no-git') git = false;
   else if (!args[i].startsWith('-') && !rootDir) rootDir = args[i];
 }
 if (!rootDir || Number.isNaN(port)) {
-  process.stderr.write('usage: npm run serve -- <projectsRootDir> [--port 5810] [--host 0.0.0.0] [--access <adminLogin>] [--allow-host <name>] [--projects <name>[,<name>...]]\n');
+  process.stderr.write('usage: npm run serve -- <projectsRootDir> [--port 5810] [--host 0.0.0.0] [--access <adminLogin>] [--allow-host <name>] [--projects <name>[,<name>...]] [--no-git]\n');
   process.exit(2);
 }
 if (access && !['127.0.0.1', 'localhost', '::1'].includes(host)) {
@@ -59,12 +65,13 @@ const server = await startServer({
   access: access ? { admin: access } : null,
   allowHosts,
   projects,
+  git,
 }).catch((err: unknown) => {
   // A --projects name that is not a folder: say so and do not start.
   process.stderr.write(`${(err as Error).message}\n`);
   process.exit(2);
 });
-process.stdout.write(`${JSON.stringify({ status: 'serving', rootDir: resolve(rootDir), access, projects, urls: server.urls })}\n`);
+process.stdout.write(`${JSON.stringify({ status: 'serving', rootDir: resolve(rootDir), access, projects, git, urls: server.urls })}\n`);
 
 const stop = () => { void server.close().then(() => process.exit(0)); };
 process.on('SIGINT', stop);

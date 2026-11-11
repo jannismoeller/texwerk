@@ -1,6 +1,7 @@
 /**
  * The start flags that narrow what the server touches: --projects serves only
- * named top-level folders and writes nothing anywhere else.
+ * named top-level folders and writes nothing anywhere else, and --no-git
+ * leaves every repository the way it is.
  *
  * Every git and ssh-keygen the server runs goes through a logging wrapper
  * put first on PATH, so the tests can check which commands ran. The wrapper
@@ -28,7 +29,7 @@ for (const tool of ['git', 'ssh-keygen']) {
   await chmod(join(binDir, tool), 0o755);
 }
 process.env.PATH = `${binDir}:${process.env.PATH}`;
-const { startServer, FIXED_PROJECTS_REFUSAL } = await import('../src/server/server.ts');
+const { startServer, FIXED_PROJECTS_REFUSAL, NO_GIT_REFUSAL } = await import('../src/server/server.ts');
 test.after(() => rm(scratch, { recursive: true, force: true }));
 
 const run = (cwd: string, ...args: string[]) => execFileSync(realGit, ['-c', 'user.name=T', '-c', 'user.email=t@t', ...args], { cwd, encoding: 'utf8' }).trim();
@@ -54,7 +55,7 @@ async function snapshot(dir: string): Promise<string[]> {
   return out.sort();
 }
 
-async function serve(t: { after: (fn: () => Promise<void>) => void }, rootDir: string, extra: { projects?: string[] }) {
+async function serve(t: { after: (fn: () => Promise<void>) => void }, rootDir: string, extra: { projects?: string[]; git?: boolean }) {
   const port = 20000 + Math.floor(Math.random() * 20000);
   const s = await startServer({ rootDir, clientDir: null, bridgeFile: null, port, host: '127.0.0.1', access: null, ...extra });
   t.after(() => s.close());
@@ -173,15 +174,84 @@ test('--projects: only the named folders are listed and open, and nothing else i
   assert.ok(!(await calls()).some((c) => c.cwd !== repo && c.cwd.startsWith(root)), 'git ran only in the served project');
 });
 
-test('without the flag every folder is a project and a repository', async (t) => {
+test('--no-git: git-writing requests are refused, the history and restores still work', async (t) => {
+  const { root, repo, bare } = await fixture('nogit');
+  const plain = join(root, 'Notes');
+  const head = run(repo, 'rev-parse', 'HEAD');
+  const index = await readFile(join(repo, '.git', 'index'));
+  const config = await readFile(join(repo, '.git', 'config'), 'utf8');
+  const remoteHead = run(bare, 'rev-parse', 'main');
+  const logged = (await calls()).length;
+  const { call, socket } = await serve(t, root, { git: false });
+
+  assert.equal((await call('GET', '/api/me')).data.git, false);
+  assert.equal(await socket('my-paper'), 'open');
+  assert.equal(await socket('Notes'), 'open');
+
+  // An existing repository gets .texwerk/ excluded. A folder without one is not made a repository.
+  assert.match(await readFile(join(repo, '.git', 'info', 'exclude'), 'utf8'), /^\.texwerk\/$/m);
+  assert.ok(!existsSync(join(plain, '.git')), 'no git init');
+  assert.ok(existsSync(join(plain, '.texwerk', 'history')));
+
+  const p = '?project=my-paper';
+  const refused: Array<[string, string, unknown?]> = [
+    ['POST', `/api/label${p}`, { message: 'v1', allowLarge: true }],
+    ['POST', `/api/git/revert${p}`, { commit: head, message: 'from Overleaf' }],
+    ['GET', `/api/git${p}`],
+    ['POST', `/api/git/remote${p}`, { url: 'https://example.org/other.git' }],
+    ['POST', `/api/git/push${p}`],
+    ['POST', `/api/git/pull${p}`, { allowLarge: true }],
+    ['POST', `/api/git/deploy-key${p}`],
+    ['POST', `/api/git/test${p}`],
+    ['POST', '/api/projects/clone', { url: bare, name: 'Cloned' }],
+  ];
+  for (const [method, path, body] of refused) {
+    const r = await call(method, path, body);
+    assert.equal(r.status, 403, `${method} ${path}`);
+    assert.equal(r.data.error, NO_GIT_REFUSAL);
+  }
+  assert.ok(!existsSync(join(root, 'Cloned')));
+
+  // TeXWerk's own history: edit, read it back, restore the file and the project.
+  assert.equal((await call('PUT', `/api/file${p}&path=main.tex`, 'changed\n')).status, 200);
+  const history = await call('GET', `/api/history${p}`);
+  assert.equal(history.status, 200);
+  const entries = history.data.entries as Array<{ id: number; path: string; hash?: string }>;
+  const labels = history.data.labels as Array<{ message: string }>;
+  assert.deepEqual(labels.map((l) => l.message), ['from Overleaf'], 'existing commits still show as labels');
+  const original = entries.find((e) => e.path === 'main.tex')!;
+  assert.equal((await call('POST', `/api/history/restore-file${p}`, { path: 'main.tex', hash: original.hash })).status, 200);
+  assert.match(await readFile(join(repo, 'main.tex'), 'utf8'), /documentclass/);
+  assert.equal((await call('PUT', `/api/file${p}&path=main.tex`, 'changed again\n')).status, 200);
+  assert.equal((await call('POST', `/api/history/restore-project${p}`, { id: original.id })).status, 200);
+  assert.match(await readFile(join(repo, 'main.tex'), 'utf8'), /documentclass/);
+  assert.deepEqual((await call('GET', '/api/history?project=Notes')).data.labels, [], 'no labels read from an enclosing repository');
+
+  // A project can still be made, but it is not a repository.
+  assert.equal((await call('POST', '/api/projects', { name: 'Fresh' })).status, 200);
+  assert.ok(existsSync(join(root, 'Fresh', 'main.tex')) && !existsSync(join(root, 'Fresh', '.git')));
+
+  await new Promise((r) => setTimeout(r, 400));
+  assert.equal(run(repo, 'rev-parse', 'HEAD'), head, 'no commit');
+  assert.deepEqual(await readFile(join(repo, '.git', 'index')), index, 'nothing staged, no figure force-added');
+  assert.equal(await readFile(join(repo, '.git', 'config'), 'utf8'), config, 'remote unchanged');
+  assert.equal(run(bare, 'rev-parse', 'main'), remoteHead, 'nothing pushed');
+  assert.ok(!existsSync(join(repo, '.texwerk', 'deploy_key')));
+  const ran = (await calls()).slice(logged);
+  assert.deepEqual([...new Set(ran.map((c) => `${c.tool} ${c.args.split(' ')[0]}`))], ['git log'], 'the server ran only git log');
+});
+
+test('without the flags every folder is a project and a repository, and git is on', async (t) => {
   const { root } = await fixture('default');
   const { call, socket } = await serve(t, root, {});
   const me = await call('GET', '/api/me');
+  assert.equal(me.data.git, true);
   assert.equal(me.data.fixedProjects, false);
   const ids = ((await call('GET', '/api/projects')).data.projects as Array<{ id: string }>).map((p) => p.id).sort();
   assert.deepEqual(ids, ['Code', 'Group/Inner', 'Notes', 'my-paper']);
   assert.equal(await socket('Notes'), 'open');
   assert.ok(existsSync(join(root, 'Notes', '.git')), 'opening a folder makes it a repository');
+  assert.equal((await call('GET', '/api/git?project=Notes')).status, 200);
 });
 
 test('--projects with --access: the directory of known people is kept in memory, not in the root', async (t) => {

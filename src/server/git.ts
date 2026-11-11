@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { chmodSync, existsSync } from 'node:fs';
+import { chmodSync, existsSync, statSync } from 'node:fs';
 import { appendFile, mkdir, readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { LARGE_FILE_BYTES, type GitLabel } from '../shared/protocol.ts';
@@ -121,10 +121,18 @@ export function git(cwd: string, args: string[], timeoutMs = 60_000, input?: str
   });
 }
 
-/** Make `dir` a repository if it is not one, and keep .texwerk/ out of it. */
-export async function ensureRepo(dir: string): Promise<void> {
+/**
+ * Make `dir` a repository if it is not one, and keep .texwerk/ out of it.
+ * With `init: false` (the server runs with --no-git) a folder without a
+ * repository is left alone, and an existing repository only gets the exclude
+ * line, so that .texwerk/ never shows up in its `git status`.
+ */
+export async function ensureRepo(dir: string, opts: { init?: boolean } = {}): Promise<void> {
   if (!existsSync(join(dir, '.git'))) {
+    if (opts.init === false) return;
     await git(dir, ['init', '-q', '-b', 'main']);
+  } else if (opts.init === false && !statSync(join(dir, '.git')).isDirectory()) {
+    return; // a worktree or submodule: its exclude file lives elsewhere
   }
   const exclude = join(dir, '.git', 'info', 'exclude');
   await mkdir(join(dir, '.git', 'info'), { recursive: true });

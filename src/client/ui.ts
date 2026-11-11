@@ -259,5 +259,6 @@ export function initials(name: string): string {
   return ((parts[0]?.[0] ?? '?') + (parts[1]?.[0] ?? '')).toUpperCase();
 }
 
-/** Tooltip of what a server started with --projects does not offer. */
+/** Tooltips of what a server started with --no-git or --projects does not offer. */
+export const NO_GIT_HINT = 'Git is disabled on this server (--no-git)';
 export const FIXED_PROJECTS_HINT = 'This server serves only the projects named by --projects';

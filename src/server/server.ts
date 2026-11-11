@@ -45,9 +45,12 @@ export interface ServerOptions {
    * to, and nothing is created in `rootDir` itself. Absent: every folder.
    */
   projects?: string[] | null;
+  /** False with --no-git: nothing commits, pushes, pulls, clones or runs `git init`. */
+  git?: boolean;
 }
 
 export const FIXED_PROJECTS_REFUSAL = 'this server serves only the projects named by --projects';
+export const NO_GIT_REFUSAL = 'Git is disabled on this server (--no-git)';
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css',
@@ -167,6 +170,7 @@ Start writing here.
 export async function startServer(options: ServerOptions) {
   const rootDir = resolve(options.rootDir);
   const only = options.projects ? new Set(options.projects) : null;
+  const gitEnabled = options.git !== false;
   if (only) {
     // Checked before anything touches the disk: a typo must not start a server.
     if (!only.size) throw new Error('--projects: name at least one project');
@@ -204,6 +208,7 @@ export async function startServer(options: ServerOptions) {
   const served = (id: string) => !only || only.has(id);
   /** Refuses whatever would add, rename or remove a folder in the root while --projects is set. */
   const refuseIfFixed = () => { if (only) throw new HttpError(403, FIXED_PROJECTS_REFUSAL); };
+  const refuseIfNoGit = () => { if (!gitEnabled) throw new HttpError(403, NO_GIT_REFUSAL); };
 
   async function getProject(id: string | null): Promise<Project> {
     if (!id) throw new HttpError(400, 'missing ?project=');
@@ -215,7 +220,7 @@ export async function startServer(options: ServerOptions) {
       if (relocating.has(clean)) throw new HttpError(409, 'this project is being renamed');
       if (!served(clean) || !isProjectDir(dir)) throw new HttpError(404, `no project "${clean}"`);
       pending = (async () => {
-        const p = new Project(clean, dir);
+        const p = new Project(clean, dir, { git: gitEnabled });
         await p.open();
         p.onUnload = () => { if (projects.get(clean) === pending) projects.delete(clean); };
         return p;
@@ -485,7 +490,7 @@ export async function startServer(options: ServerOptions) {
     if (path === '/api/me') {
       return json(response, 200, {
         you: identity, access: Boolean(access), admin: !access || identity.login === access.admin, host: hostname(),
-        fixedProjects: Boolean(only),
+        git: gitEnabled, fixedProjects: Boolean(only),
       });
     }
 
@@ -500,7 +505,7 @@ export async function startServer(options: ServerOptions) {
       const dir = dirOf(id);
       await mkdir(dir);
       if (!body.blank) await writeFile(join(dir, 'main.tex'), TEMPLATE);
-      await gitOps.ensureRepo(dir);
+      await gitOps.ensureRepo(dir, { init: gitEnabled });
       await claim(identity, id);
       return json(response, 200, { id });
     }
@@ -521,13 +526,14 @@ export async function startServer(options: ServerOptions) {
         await mkdir(join(dir, rel, '..'), { recursive: true });
         await writeFile(join(dir, rel), e.data);
       }
-      await gitOps.ensureRepo(dir);
+      await gitOps.ensureRepo(dir, { init: gitEnabled });
       await claim(identity, id);
       return json(response, 200, { id });
     }
 
     if (path === '/api/projects/clone' && method === 'POST') {
       refuseIfFixed();
+      refuseIfNoGit();
       const body = await readJson<{ url: string; name: string; folder?: string }>(request);
       const id = await newProjectId(identity, body.name, body.folder);
       if (!/^(https?:\/\/|git@|ssh:\/\/)/.test(body.url)) throw new HttpError(400, 'use an https:// or ssh git URL');
@@ -958,7 +964,10 @@ export async function startServer(options: ServerOptions) {
 
     if (path === '/api/history' && method === 'GET') {
       await project.history.flush();
-      return json(response, 200, { entries: project.history.all(), labels: await gitOps.labels(project.dir) });
+      // Labels are read with `git log`, which writes nothing. Without a
+      // repository of its own (--no-git), git would find an enclosing one.
+      const hasRepo = gitEnabled || existsSync(join(project.dir, '.git'));
+      return json(response, 200, { entries: project.history.all(), labels: hasRepo ? await gitOps.labels(project.dir) : [] });
     }
 
     if (path === '/api/history/blob' && method === 'GET') {
@@ -992,6 +1001,10 @@ export async function startServer(options: ServerOptions) {
       json(response, 409, { error: `${largeFiles.length} large file${largeFiles.length === 1 ? '' : 's'} would be committed`, largeFiles });
       return true;
     };
+
+    // --no-git: every route of the Git dialog, labels and reverts. GET
+    // /api/git is refused too, since `git status` may rewrite the index.
+    if (path === '/api/label' || path === '/api/git' || path.startsWith('/api/git/')) refuseIfNoGit();
 
     if (path === '/api/label' && method === 'POST') {
       const body = await readJson<{ message: string; allowLarge?: boolean }>(request);

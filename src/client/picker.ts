@@ -1,4 +1,4 @@
-import { api, confirmDialog, copyText, dialog, FIXED_PROJECTS_HINT, h, menu, prompt, toast } from './ui.ts';
+import { api, confirmDialog, copyText, dialog, FIXED_PROJECTS_HINT, h, menu, NO_GIT_HINT, prompt, toast } from './ui.ts';
 
 /**
  * The projects browser, ported from DeckWerk's deck picker: a file manager
@@ -42,6 +42,8 @@ export interface Me {
   you: { login: string; name: string };
   access: boolean;
   admin: boolean;
+  /** False when the server runs with --no-git. */
+  git?: boolean;
   /** True when the server runs with --projects: no project can be added, renamed, moved or deleted. */
   fixedProjects?: boolean;
 }
@@ -309,7 +311,9 @@ export function showPicker(opts: { me: Me; dismissable: boolean; folder?: string
   const importBtn = h('button', {}, 'Import… ▾');
   importBtn.addEventListener('click', () => menu(importBtn, [
     h('button', { onclick: importZip }, 'Project from .zip…'),
-    h('button', { onclick: cloneRepo }, 'Clone a git repository…'),
+    opts.me.git === false
+      ? h('button', { disabled: true, title: NO_GIT_HINT }, 'Clone a git repository…')
+      : h('button', { onclick: cloneRepo }, 'Clone a git repository…'),
   ]));
   const fixed = Boolean(opts.me.fixedProjects);
   const fixedHint = fixed ? { disabled: true, title: FIXED_PROJECTS_HINT } : {};

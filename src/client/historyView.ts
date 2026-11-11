@@ -3,7 +3,7 @@ import { EditorView, lineNumbers } from '@codemirror/view';
 import { unifiedMergeView } from '@codemirror/merge';
 import { colorFor } from '@shared/files.ts';
 import type { GitLabel, HistoryEntry } from '@shared/protocol.ts';
-import { api, confirmDialog, formatTime, h, toast, withName } from './ui.ts';
+import { api, confirmDialog, formatTime, h, NO_GIT_HINT, toast, withName } from './ui.ts';
 import { editorTheme, onThemeChange } from './theme.ts';
 
 /**
@@ -37,6 +37,8 @@ export interface HistoryOptions {
   project: () => string;
   onClose: () => void;
   onLabel: () => void;
+  /** False when the server runs with --no-git: no new labels, no reverts. */
+  git?: boolean;
 }
 
 export class HistoryView {
@@ -132,7 +134,9 @@ export class HistoryView {
       h('div', { class: 'pane-head' },
         h('span', { class: 'label' }, 'History'),
         h('span', { class: 'spacer' }),
-        h('button', { class: 'ghost icon', onclick: () => this.opts.onLabel() }, '+ label'),
+        this.opts.git === false
+          ? h('button', { class: 'ghost icon', disabled: true, title: NO_GIT_HINT }, '+ label')
+          : h('button', { class: 'ghost icon', onclick: () => this.opts.onLabel() }, '+ label'),
         h('button', { class: 'ghost icon', onclick: () => this.opts.onClose() }, 'close')),
       ...rows);
   }
@@ -167,6 +171,7 @@ export class HistoryView {
     if (item.kind === 'label') {
       const l = item.label;
       const revert = h('button', { class: 'danger' }, 'Revert project to this label…');
+      if (this.opts.git === false) { revert.disabled = true; revert.title = NO_GIT_HINT; }
       revert.addEventListener('click', async () => {
         const ok = await confirmDialog('Revert to label', `Put every file back the way it was at "${l.message}"? The current state stays in the history, and the revert is saved as a new label.`, 'Revert', true);
         if (!ok) return;

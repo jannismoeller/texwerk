@@ -14,7 +14,7 @@ import { authorRuns } from '@shared/provenance.ts';
 import { findInclude, graphicsPaths, resolveGraphic } from '@shared/figures.ts';
 import type { AuthorInfo } from '@shared/protocol.ts';
 import type { CommentThread } from '@shared/comments.ts';
-import { api, ApiError, copyText, dialog, h, icon, initials, menu, menuAt, storedName, storeName, toast, withName } from './ui.ts';
+import { api, ApiError, copyText, dialog, h, icon, initials, menu, menuAt, NO_GIT_HINT, storedName, storeName, toast, withName } from './ui.ts';
 import { showPicker, showShareDialog, type Me } from './picker.ts';
 import { currentTheme, onThemeChange, setTheme, themeInfo, THEMES } from './theme.ts';
 import { SidePanel } from './sidePanel.ts';
@@ -65,6 +65,10 @@ export async function renderEditor(app: HTMLElement, project: string, meInfo: Me
   const historyBtn = h('button', { title: 'Full edit history, labelled versions' }, 'History');
   const labelBtn = h('button', { title: 'Save a named version (a git commit)' }, 'Label version');
   const gitBtn = h('button', { title: 'Git remote, push and pull' }, 'Git…');
+  const gitEnabled = meInfo.git !== false;
+  if (!gitEnabled) {
+    for (const b of [labelBtn, gitBtn]) { b.disabled = true; b.title = NO_GIT_HINT; }
+  }
   const agentBtn = h('button', { title: 'Mirror this project to your computer for your editor or agent' }, 'Agent…');
   const downloadBtn = h('button', { title: 'Download' }, 'Download ▾');
   // The colour theme, per browser: a sun or a moon, and a menu of themes.
@@ -846,7 +850,7 @@ export async function renderEditor(app: HTMLElement, project: string, meInfo: Me
 
   function openHistory(): void {
     if (historyView) { closeHistory(); return; }
-    historyView = new HistoryView({ project: () => project, onClose: closeHistory, onLabel: openLabelDialog });
+    historyView = new HistoryView({ project: () => project, onClose: closeHistory, onLabel: openLabelDialog, git: gitEnabled });
     editorPane.style.display = 'none';
     rightSplit.style.display = 'none';
     viewer.root.style.display = 'none';

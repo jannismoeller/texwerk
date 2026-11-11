@@ -290,8 +290,16 @@ For that reason nobody can create, import, clone, rename, move or delete a proje
 The server does not start if a name is not a folder of the projects folder.
 The served project still gets its own `.texwerk/` folder.
 
+`--no-git` turns off everything that writes to git: labels, the Git dialog (remote, deploy key, test, push, pull), reverting to a label and cloning a new project.
+The top bar shows **Label version** and **Git…** greyed out.
+Use it when another tool owns the repository, for example a clone of an Overleaf project that you pull and push yourself.
+The History view and restoring a file or the whole project from it keep working, because they use TeXWerk's own history in `.texwerk/history/`.
+Commits that are already in the repository still show as labels in the History view, read with `git log`.
+The server does not run `git init`.
+In a folder that already is a repository, it only adds `.texwerk/` to `.git/info/exclude`, so that the server's own files never show up in `git status`.
+
 ```bash
-npm run serve -- "/path/to/folder" --projects my-paper --host 127.0.0.1
+npm run serve -- "/path/to/folder" --projects my-paper --no-git --host 127.0.0.1
 ```
 
 ### Restarting
@@ -391,6 +399,8 @@ TeXWerk trusts everyone who can reach it. Please keep that in mind:
   Every request for another folder answers "not found", and nothing creates, renames or deletes a folder in the projects folder.
   This does not hide the other folders from TeX.
   With bubblewrap a compile sees only its own project, but without it `\input` can read them like any other file the server's user can read.
+- With `--no-git`, the server runs no git command that writes to a repository or reaches a remote, and it creates no deploy keys.
+  It runs only `git log`, to show existing commits in the History view.
 - Never expose it with `tailscale funnel`, a port forward or a reverse proxy to
   the internet.
 

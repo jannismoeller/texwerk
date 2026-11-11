@@ -127,9 +127,13 @@ export class Project {
   private compileQueued: string | null = null;
   private compiling: Promise<void> | null = null;
 
-  constructor(name: string, dir: string) {
+  /** False when the server runs with --no-git: the folder is never made a repository. */
+  private readonly gitEnabled: boolean;
+
+  constructor(name: string, dir: string, opts: { git?: boolean } = {}) {
     this.name = name;
     this.dir = dir;
+    this.gitEnabled = opts.git !== false;
     this.texts = this.doc.getMap('text');
     this.bins = this.doc.getMap('bin');
     this.comments = this.doc.getMap('comments');
@@ -146,7 +150,7 @@ export class Project {
   // ---------------------------------------------------------------- loading
 
   async open(): Promise<void> {
-    await ensureRepo(this.dir);
+    await ensureRepo(this.dir, { init: this.gitEnabled });
     await mkdir(join(this.dir, BUILD_DIR), { recursive: true });
     await this.history.load();
     await this.loadSettings();
