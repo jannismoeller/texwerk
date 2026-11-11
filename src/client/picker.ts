@@ -1,4 +1,4 @@
-import { api, confirmDialog, copyText, dialog, h, menu, prompt, toast } from './ui.ts';
+import { api, confirmDialog, copyText, dialog, FIXED_PROJECTS_HINT, h, menu, prompt, toast } from './ui.ts';
 
 /**
  * The projects browser, ported from DeckWerk's deck picker: a file manager
@@ -42,6 +42,8 @@ export interface Me {
   you: { login: string; name: string };
   access: boolean;
   admin: boolean;
+  /** True when the server runs with --projects: no project can be added, renamed, moved or deleted. */
+  fixedProjects?: boolean;
 }
 
 const folderOf = (id: string) => (id.includes('/') ? id.slice(0, id.lastIndexOf('/')) : '');
@@ -178,6 +180,7 @@ export function showPicker(opts: { me: Me; dismissable: boolean; folder?: string
       await api('POST', `/api/projects/delete?project=${encodeURIComponent(p.id)}`)
         .then(() => (p.id === opts.current ? (location.href = '/') : reopen(folder)), fail('Delete'));
     });
+    if (opts.me.fixedProjects) return rowGroup(row, opts.me.access ? [share] : []);
     return rowGroup(row, opts.me.access ? [rename, move, share, remove] : [rename, move, remove]);
   };
 
@@ -308,12 +311,15 @@ export function showPicker(opts: { me: Me; dismissable: boolean; folder?: string
     h('button', { onclick: importZip }, 'Project from .zip…'),
     h('button', { onclick: cloneRepo }, 'Clone a git repository…'),
   ]));
+  const fixed = Boolean(opts.me.fixedProjects);
+  const fixedHint = fixed ? { disabled: true, title: FIXED_PROJECTS_HINT } : {};
+  if (fixed) Object.assign(importBtn, fixedHint);
   const actions = h('div', { class: 'picker-footer-actions' },
     opts.dismissable ? h('button', { onclick: close }, 'Cancel') : '',
-    h('button', { onclick: newProject }, 'New project…'),
-    h('button', { onclick: newFolder }, 'New folder…'),
+    h('button', { onclick: newProject, ...fixedHint }, 'New project…'),
+    h('button', { onclick: newFolder, ...fixedHint }, 'New folder…'),
     importBtn,
-    h('button', { title: 'Deleted projects and folders', onclick: () => showProjectTrash(() => void render()) }, 'Trash…'));
+    h('button', { title: 'Deleted projects and folders', onclick: () => showProjectTrash(() => void render()), ...fixedHint }, 'Trash…'));
 
   const who = opts.me.access ? h('span', { class: 'picker-who', title: opts.me.you.login }, `${opts.me.you.name}${opts.me.admin ? ' · admin' : ''}`) : '';
   box.append(

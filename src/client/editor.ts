@@ -551,14 +551,14 @@ export async function renderEditor(app: HTMLElement, project: string, meInfo: Me
 
   // Click the name to rename the project in place. Only the owner may (the
   // server checks too); a view-only person or a non-owner just sees the name.
-  let canRename = !access;
+  let canRename = !access && !meInfo.fixedProjects;
   const updateTitleAffordance = () => {
     titleEl.classList.toggle('editable', canRename && !readOnly);
     titleEl.title = canRename && !readOnly ? `${project} — click to rename` : project;
   };
   if (access) {
     void api<{ canManage?: boolean }>('GET', `/api/access?project=${encodeURIComponent(project)}`)
-      .then((r) => { canRename = Boolean(r.canManage); updateTitleAffordance(); }, () => {});
+      .then((r) => { canRename = Boolean(r.canManage) && !meInfo.fixedProjects; updateTitleAffordance(); }, () => {});
   }
   updateTitleAffordance();
   titleEl.addEventListener('click', () => {

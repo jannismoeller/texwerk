@@ -155,14 +155,16 @@ export class UserDirectory {
   private users = new Map<string, KnownUser>();
   private loaded: Promise<void> | null = null;
   private writing: Promise<void> = Promise.resolve();
-  private readonly file: string;
+  private readonly file: string | null;
 
-  constructor(file: string) {
+  /** `file` null: kept in memory only (with --projects, nothing is written into the projects root). */
+  constructor(file: string | null) {
     this.file = file;
   }
 
   private load(): Promise<void> {
     this.loaded ??= (async () => {
+      if (!this.file) return;
       try {
         const raw = JSON.parse(await readFile(this.file, 'utf8')) as unknown;
         if (Array.isArray(raw)) {
@@ -186,10 +188,12 @@ export class UserDirectory {
     if (!stale) return;
     this.users.set(identity.login, { login: identity.login, name, lastSeen: now.toISOString() });
     const snapshot = this.list();
+    const file = this.file;
+    if (!file) return;
     this.writing = this.writing.then(async () => {
-      const partial = `${this.file}.${process.pid}.tmp`;
+      const partial = `${file}.${process.pid}.tmp`;
       await writeFile(partial, `${JSON.stringify(snapshot, null, 2)}\n`, 'utf8');
-      await rename(partial, this.file);
+      await rename(partial, file);
     }).catch(() => {});
     await this.writing;
   }

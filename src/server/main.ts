@@ -5,6 +5,7 @@ import { startServer } from './server.ts';
 /**
  * TeXWerk collaboration server:
  *   npm run serve -- <projectsRootDir> [--port 5810] [--host 0.0.0.0] [--access <adminLogin>] [--allow-host <name>]
+ *                    [--projects <name>[,<name>...]]
  *
  * Every top-level folder of <projectsRootDir> is a LaTeX project and a git
  * repository. Binds all interfaces by default so tailnet peers can reach it.
@@ -16,6 +17,12 @@ import { startServer } from './server.ts';
  * --allow-host <name> (repeatable): a DNS name people reach the server by,
  * besides IP addresses, localhost, single-label, *.ts.net and *.local names,
  * which are always allowed (see origin.ts).
+ *
+ * --projects <name>[,<name>...]: only these top-level folders of
+ * <projectsRootDir> are projects. The others are not listed, cannot be
+ * opened and are never written to, and no project can be created, imported,
+ * cloned, renamed, moved or deleted, so nothing is written into the root.
+ * For a project that lives in a folder next to unrelated ones.
  */
 const args = process.argv.slice(2);
 let rootDir: string | null = null;
@@ -23,15 +30,17 @@ let port = 5810;
 let host = '0.0.0.0';
 let access: string | null = null;
 const allowHosts: string[] = [];
+let projects: string[] | null = null;
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--port') port = Number(args[++i]);
   else if (args[i] === '--host') host = args[++i];
   else if (args[i] === '--access') access = args[++i];
   else if (args[i] === '--allow-host') allowHosts.push(...args[++i].split(','));
+  else if (args[i] === '--projects') projects = [...(projects ?? []), ...String(args[++i] ?? '').split(',').map((n) => n.trim()).filter(Boolean)];
   else if (!args[i].startsWith('-') && !rootDir) rootDir = args[i];
 }
 if (!rootDir || Number.isNaN(port)) {
-  process.stderr.write('usage: npm run serve -- <projectsRootDir> [--port 5810] [--host 0.0.0.0] [--access <adminLogin>] [--allow-host <name>]\n');
+  process.stderr.write('usage: npm run serve -- <projectsRootDir> [--port 5810] [--host 0.0.0.0] [--access <adminLogin>] [--allow-host <name>] [--projects <name>[,<name>...]]\n');
   process.exit(2);
 }
 if (access && !['127.0.0.1', 'localhost', '::1'].includes(host)) {
@@ -49,8 +58,13 @@ const server = await startServer({
   host,
   access: access ? { admin: access } : null,
   allowHosts,
+  projects,
+}).catch((err: unknown) => {
+  // A --projects name that is not a folder: say so and do not start.
+  process.stderr.write(`${(err as Error).message}\n`);
+  process.exit(2);
 });
-process.stdout.write(`${JSON.stringify({ status: 'serving', rootDir: resolve(rootDir), access, urls: server.urls })}\n`);
+process.stdout.write(`${JSON.stringify({ status: 'serving', rootDir: resolve(rootDir), access, projects, urls: server.urls })}\n`);
 
 const stop = () => { void server.close().then(() => process.exit(0)); };
 process.on('SIGINT', stop);

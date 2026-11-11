@@ -258,3 +258,6 @@ export function initials(name: string): string {
   const parts = name.replace(/ · agent$/, '').split(/[\s@._-]+/).filter(Boolean);
   return ((parts[0]?.[0] ?? '?') + (parts[1]?.[0] ?? '')).toUpperCase();
 }
+
+/** Tooltip of what a server started with --projects does not offer. */
+export const FIXED_PROJECTS_HINT = 'This server serves only the projects named by --projects';

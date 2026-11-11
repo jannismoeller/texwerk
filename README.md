@@ -279,6 +279,21 @@ internet: IP addresses, `localhost`, single-label names (`lab-server`),
 `*.ts.net` and `*.local`. If people reach it by another DNS name, add it with
 `--allow-host texwerk.example.org`.
 
+### Serving one project from a shared folder
+
+`--projects <name>[,<name>...]` makes only the named top-level folders of the projects folder into projects.
+Use it when a project lives next to unrelated folders, for example a git clone of an Overleaf project inside a folder of notes.
+TeXWerk does not follow symbolic links, so the projects folder has to be that parent folder itself.
+The other folders are not listed and cannot be opened, also not through a `?project=` link or a mirror bridge.
+The server never writes into them or into the projects folder itself.
+For that reason nobody can create, import, clone, rename, move or delete a project while the flag is set, and with `--access` the list of known people (`.texwerk-users.json`) is kept in memory only.
+The server does not start if a name is not a folder of the projects folder.
+The served project still gets its own `.texwerk/` folder.
+
+```bash
+npm run serve -- "/path/to/folder" --projects my-paper --host 127.0.0.1
+```
+
 ### Restarting
 
 A restart persists every open project first, including the collaborative
@@ -372,6 +387,10 @@ TeXWerk trusts everyone who can reach it. Please keep that in mind:
   connection. Requests from other websites and from unknown host names are
   refused, and files from projects are served so that they cannot run as
   TeXWerk pages.
+- With `--projects`, the server opens and writes only the named folders of the projects folder.
+  Every request for another folder answers "not found", and nothing creates, renames or deletes a folder in the projects folder.
+  This does not hide the other folders from TeX.
+  With bubblewrap a compile sees only its own project, but without it `\input` can read them like any other file the server's user can read.
 - Never expose it with `tailscale funnel`, a port forward or a reverse proxy to
   the internet.
 

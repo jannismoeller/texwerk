@@ -1,5 +1,5 @@
 import { createReadStream, existsSync } from 'node:fs';
-import { mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { hostname, networkInterfaces } from 'node:os';
 import { extname, join, resolve } from 'node:path';
@@ -39,7 +39,15 @@ export interface ServerOptions {
   access: AccessConfig | null;
   /** Host names besides the ones `hostAllowed` accepts on its own (see origin.ts). */
   allowHosts?: string[];
+  /**
+   * --projects: the only top-level folders of `rootDir` that are projects.
+   * Every other folder is invisible, cannot be opened, and is never written
+   * to, and nothing is created in `rootDir` itself. Absent: every folder.
+   */
+  projects?: string[] | null;
 }
+
+export const FIXED_PROJECTS_REFUSAL = 'this server serves only the projects named by --projects';
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css',
@@ -158,7 +166,19 @@ Start writing here.
 
 export async function startServer(options: ServerOptions) {
   const rootDir = resolve(options.rootDir);
-  await mkdir(rootDir, { recursive: true });
+  const only = options.projects ? new Set(options.projects) : null;
+  if (only) {
+    // Checked before anything touches the disk: a typo must not start a server.
+    if (!only.size) throw new Error('--projects: name at least one project');
+    for (const name of only) {
+      const dir = join(rootDir, name);
+      const info = cleanProjectName(name) === name ? await lstat(dir).catch(() => null) : null;
+      if (!info?.isDirectory()) throw new Error(`--projects: "${name}" is not a folder in ${rootDir}`);
+      if (existsSync(join(dir, FOLDER_MARKER))) throw new Error(`--projects: "${name}" is a TeXWerk folder of projects, not a project`);
+    }
+  } else {
+    await mkdir(rootDir, { recursive: true });
+  }
   const unsandboxed = setupCompileSandbox(rootDir);
   if (unsandboxed) {
     process.stderr.write(`warning: compiles are not sandboxed (bubblewrap: ${unsandboxed}), so a document can read any file this server can read, other projects included.\n`);
@@ -168,7 +188,7 @@ export async function startServer(options: ServerOptions) {
   const relocating = new Set<string>();
   const access = options.access ? { admin: normalizeLogin(options.access.admin) } : null;
   const rootTrash = join(rootDir, ROOT_TRASH);
-  const users = access ? new UserDirectory(join(rootDir, '.texwerk-users.json')) : null;
+  const users = access ? new UserDirectory(only ? null : join(rootDir, '.texwerk-users.json')) : null;
 
   // --------------------------------------------------------- the catalog
 
@@ -180,6 +200,10 @@ export async function startServer(options: ServerOptions) {
 
   const isFolderDir = (dir: string) => existsSync(join(dir, FOLDER_MARKER));
   const isProjectDir = (dir: string) => existsSync(dir) && !isFolderDir(dir);
+  /** With --projects, only the named top-level folders are projects. */
+  const served = (id: string) => !only || only.has(id);
+  /** Refuses whatever would add, rename or remove a folder in the root while --projects is set. */
+  const refuseIfFixed = () => { if (only) throw new HttpError(403, FIXED_PROJECTS_REFUSAL); };
 
   async function getProject(id: string | null): Promise<Project> {
     if (!id) throw new HttpError(400, 'missing ?project=');
@@ -189,7 +213,7 @@ export async function startServer(options: ServerOptions) {
     let pending = projects.get(clean);
     if (!pending) {
       if (relocating.has(clean)) throw new HttpError(409, 'this project is being renamed');
-      if (!isProjectDir(dir)) throw new HttpError(404, `no project "${clean}"`);
+      if (!served(clean) || !isProjectDir(dir)) throw new HttpError(404, `no project "${clean}"`);
       pending = (async () => {
         const p = new Project(clean, dir);
         await p.open();
@@ -217,7 +241,7 @@ export async function startServer(options: ServerOptions) {
 
   async function requireRole(identity: Identity, id: string, need: 'view' | 'edit' | 'manage'): Promise<ProjectRole> {
     const clean = cleanProjectId(id);
-    if (!clean || !isProjectDir(dirOf(clean))) throw new HttpError(404, `no project "${id}"`);
+    if (!clean || !served(clean) || !isProjectDir(dirOf(clean))) throw new HttpError(404, `no project "${id}"`);
     const role = await roleOf(identity, clean);
     if (!role) throw new HttpError(403, 'you do not have access to this project');
     if (need === 'edit' && role === 'view') throw new HttpError(403, 'you have view-only access to this project');
@@ -280,8 +304,9 @@ export async function startServer(options: ServerOptions) {
         if (!e.isDirectory() || e.name.startsWith('.')) continue;
         const childDir = join(dir, e.name);
         const id = rel ? `${rel}/${e.name}` : e.name;
-        if (!cleanProjectId(id)) continue;
+        if (!cleanProjectId(id) || !served(id)) continue;
         if (isFolderDir(childDir)) {
+          if (only) continue;
           const inside = await walk(childDir, id);
           const owner = access ? await readFolderOwner(childDir, access) : undefined;
           const visible = !access || folderVisibleTo(identity.login, { owner: owner!, accessibleProjects: inside }, access);
@@ -458,7 +483,10 @@ export async function startServer(options: ServerOptions) {
 
     // ---------------------------------------------------------------- api
     if (path === '/api/me') {
-      return json(response, 200, { you: identity, access: Boolean(access), admin: !access || identity.login === access.admin, host: hostname() });
+      return json(response, 200, {
+        you: identity, access: Boolean(access), admin: !access || identity.login === access.admin, host: hostname(),
+        fixedProjects: Boolean(only),
+      });
     }
 
     if (path === '/api/projects' && method === 'GET') return json(response, 200, await catalog(identity));
@@ -466,6 +494,7 @@ export async function startServer(options: ServerOptions) {
     if (path === '/api/users' && method === 'GET') return json(response, 200, users ? await users.all() : []);
 
     if (path === '/api/projects' && method === 'POST') {
+      refuseIfFixed();
       const body = await readJson<{ name: string; folder?: string; blank?: boolean }>(request);
       const id = await newProjectId(identity, body.name, body.folder);
       const dir = dirOf(id);
@@ -477,6 +506,7 @@ export async function startServer(options: ServerOptions) {
     }
 
     if (path === '/api/projects/import' && method === 'POST') {
+      refuseIfFixed();
       const id = await newProjectId(identity, newNameParam(url), url.searchParams.get('folder'));
       const dir = dirOf(id);
       const entries = readZip(await readBody(request));
@@ -497,6 +527,7 @@ export async function startServer(options: ServerOptions) {
     }
 
     if (path === '/api/projects/clone' && method === 'POST') {
+      refuseIfFixed();
       const body = await readJson<{ url: string; name: string; folder?: string }>(request);
       const id = await newProjectId(identity, body.name, body.folder);
       if (!/^(https?:\/\/|git@|ssh:\/\/)/.test(body.url)) throw new HttpError(400, 'use an https:// or ssh git URL');
@@ -549,6 +580,7 @@ export async function startServer(options: ServerOptions) {
     };
 
     if (path === '/api/projects/rename' && method === 'POST') {
+      refuseIfFixed();
       const id = cleanProjectId(projectParam ?? '') ?? '';
       await requireRole(identity, id, 'manage');
       const name = cleanProjectName(newNameParam(url) ?? '');
@@ -559,6 +591,7 @@ export async function startServer(options: ServerOptions) {
     }
 
     if (path === '/api/projects/move' && method === 'POST') {
+      refuseIfFixed();
       const id = cleanProjectId(projectParam ?? '') ?? '';
       await requireRole(identity, id, 'manage');
       const folder = await checkFolder(identity, url.searchParams.get('folder') ?? '');
@@ -569,6 +602,7 @@ export async function startServer(options: ServerOptions) {
     }
 
     if (path === '/api/folders' && method === 'POST') {
+      refuseIfFixed();
       const target = cleanProjectId(url.searchParams.get('path') ?? '');
       if (!target) throw new HttpError(400, 'invalid folder name');
       await checkFolder(identity, target.includes('/') ? target.slice(0, target.lastIndexOf('/')) : '');
@@ -588,6 +622,7 @@ export async function startServer(options: ServerOptions) {
     };
 
     if (path === '/api/folders/rename' && method === 'POST') {
+      refuseIfFixed();
       const folder = await manageFolder(url.searchParams.get('path') ?? '');
       const name = cleanProjectName(newNameParam(url) ?? '');
       if (!name) throw new HttpError(400, 'invalid name');
@@ -604,6 +639,7 @@ export async function startServer(options: ServerOptions) {
     }
 
     if (path === '/api/folders' && method === 'DELETE') {
+      refuseIfFixed();
       const folder = await manageFolder(url.searchParams.get('path') ?? '');
       const inside = (await readdir(dirOf(folder))).filter((n) => n !== FOLDER_MARKER);
       if (inside.length) throw new HttpError(409, 'only an empty folder can be deleted');
@@ -617,6 +653,7 @@ export async function startServer(options: ServerOptions) {
      * and the document is persisted, so nothing writes the folder back.
      */
     if (path === '/api/projects/delete' && method === 'POST') {
+      refuseIfFixed();
       const id = cleanProjectId(projectParam ?? '') ?? '';
       await requireRole(identity, id, 'manage');
       if (relocating.has(id)) throw new HttpError(409, 'this project is being renamed');
@@ -662,10 +699,12 @@ export async function startServer(options: ServerOptions) {
     };
 
     if (path === '/api/projects/trash' && method === 'GET') {
-      return json(response, 200, { items: await visibleRootTrash() });
+      // With --projects the root's trash holds nothing of the served projects.
+      return json(response, 200, { items: only ? [] : await visibleRootTrash() });
     }
 
     if (path === '/api/projects/trash/restore' && method === 'POST') {
+      refuseIfFixed();
       const tid = url.searchParams.get('id');
       if (!validTrashId(tid)) throw new HttpError(400, 'invalid trash id');
       const meta = (await visibleRootTrash()).find((m) => m.id === tid);
