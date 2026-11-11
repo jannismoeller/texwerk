@@ -18,8 +18,8 @@ project into a local folder and keeps it in sync both ways.
 
 ## Changes in this fork
 
-This branch (`local-light-theme`) extends upstream TeXWerk from commit `3835de6`.
-It lives only in a local repository and is not yet pushed to a public fork.
+The branch `dev` of the fork [jannismoeller/texwerk](https://github.com/jannismoeller/texwerk) extends upstream TeXWerk ([vsitzmann/texwerk](https://github.com/vsitzmann/texwerk)) from commit `3835de6`.
+The fork's `main` follows upstream unchanged.
 
 ### Themes and theme picker
 
