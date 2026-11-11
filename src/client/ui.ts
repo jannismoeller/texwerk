@@ -25,6 +25,8 @@ const ICONS = {
   sun: '<circle cx="8" cy="8" r="3"/><path d="M8 1v1.6M8 13.4V15M1 8h1.6M13.4 8H15M3.05 3.05l1.13 1.13M11.82 11.82l1.13 1.13M3.05 12.95l1.13-1.13M11.82 4.18l1.13-1.13"/>',
   moon: '<path d="M13.5 9.6A5.6 5.6 0 0 1 6.4 2.5a5.6 5.6 0 1 0 7.1 7.1z"/>',
   check: '<path d="M3 8.5l3.2 3L13 4.5"/>',
+  /** An opened envelope: "mark as read". */
+  read: '<path d="M2 6.8L8 2.5l6 4.3V13.5H2z"/><path d="M2 6.8l6 4.2 6-4.2"/>',
 } as const;
 
 export type IconName = keyof typeof ICONS;

@@ -549,15 +549,15 @@ code { color: var(--cyan); }
 .thread-card.resolved { opacity: .55; }
 .thread-card.resolved:hover { opacity: .8; }
 /* Threads and messages this name has not seen, all in the one --unread
-   colour: a frame and tint on the card (and on the popup that opened it),
-   a line beside each new message. */
-.thread-card.unread, .comment-popover.unread {
+   colour: a frame and tint on the card, a line beside each new message
+   (in the card and in the popup), and the "mark as read" button. */
+.thread-card.unread {
   border-color: var(--unread);
   background: color-mix(in srgb, var(--unread) 7%, var(--panel));
   box-shadow: 0 0 0 1px var(--unread);
 }
-.comment-popover.unread { box-shadow: 0 0 0 1px var(--unread), 0 14px 38px rgb(0 0 0 / calc(55% * var(--shadow-k))); }
 .msg.unread { box-shadow: inset 3px 0 var(--unread); padding-left: 8px; }
+.thread-head .mark-read { color: var(--unread); padding: 2px; }
 
 .pdf-comment-mark {
   position: absolute;

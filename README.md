@@ -138,12 +138,11 @@ must not be exposed to the open internet.
   New comments and replies by others (people, or agents, one's own too) are marked: the
   thread's card in the list gets an accent frame and tint, each unseen
   message an accent line on its left, the gutter bubble turns accent with a
-  halo, and the Comments tab shows the number of such threads. A popup opened
-  on such a thread keeps the frame and the lines while it stays open. A thread counts as read once it is opened in the popup or
-  selected in the list, and **Mark all read** reads them all after a confirmation. **unread
-  only** in the Comments tab lists just the threads with unseen messages (a
-  thread read there stays listed while it is selected), and each browser
-  remembers that choice. Resolved
+  halo, and the Comments tab shows the number of such threads.
+  The popup of such a thread shows the same lines beside its unseen messages.
+  A thread becomes read only by an explicit action: the envelope button in the head of an unread thread, in its card and in its popup, or **Mark all read**, which reads them all after a confirmation.
+  Opening a thread in the popup, selecting it in the list, following a comment link or replying leaves it unread.
+  **unread only** in the Comments tab lists just the threads with unseen messages, so a thread marked as read there leaves the list at once, and each browser remembers that choice. Resolved
   threads count as read. The server keeps what each name has seen in
   `.texwerk/read-state.json` (name, then thread, then the time of the newest
   message seen), so it is the same in every browser and device of that name

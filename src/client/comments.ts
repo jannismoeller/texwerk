@@ -2,7 +2,7 @@ import type * as Y from 'yjs';
 import { allThreads, sortThreads, type CommentThread } from '@shared/comments.ts';
 import { colorFor } from '@shared/files.ts';
 import { mergeSeen, newestMessage, unreadMessages, type SeenThreads } from '@shared/readState.ts';
-import { api, confirmDialog, copyText, formatTime, h, toast } from './ui.ts';
+import { api, confirmDialog, copyText, formatTime, h, icon, toast } from './ui.ts';
 
 /**
  * Comment threads in the browser: the list (the Comments tab), a thread
@@ -38,13 +38,12 @@ export class Comments {
   private popover: HTMLElement | null = null;
   private popoverThread: string | null = null;
   private selected: string | null = null;
-  /** What this name has seen, from the server (null until it arrives: then nothing counts as unread). */
-  private seen: SeenThreads | null = null;
   /**
-   * Messages that were unread when their thread was opened or selected:
-   * still marked as new while the thread stays open, though it is read now.
+   * What this name has seen, from the server (null until it arrives: then
+   * nothing counts as unread). It changes only by an explicit action: the
+   * "mark as read" button of a thread, or "Mark all read".
    */
-  private shownUnread = new Map<string, Set<string>>();
+  private seen: SeenThreads | null = null;
   show = true;
 
   constructor(opts: CommentsOptions) {
@@ -123,16 +122,10 @@ export class Comments {
     return this.threads.filter((t) => this.unread(t)).length;
   }
 
-  /** The thread was opened or selected: all of it is seen now. */
-  private markRead(id: string): void {
+  /** The thread's "mark as read" button: all of it is seen now. */
+  markRead(id: string): void {
     const t = this.threads.find((x) => x.id === id);
     if (!t || !this.seen) return;
-    const fresh = unreadMessages(t, this.seen, this.opts.me().login);
-    if (fresh.length) {
-      const shown = this.shownUnread.get(id) ?? new Set<string>();
-      for (const m of fresh) shown.add(m.id);
-      this.shownUnread.set(id, shown);
-    }
     const newest = newestMessage(t);
     if (newest <= (this.seen[id] ?? 0)) return;
     this.saveSeen({ seen: { [id]: newest } }, { [id]: newest });
@@ -152,11 +145,6 @@ export class Comments {
       .catch(() => { /* the next readState event brings it back in line */ });
   }
 
-  /** Forget the "new" marks of threads that are no longer open or selected. */
-  private dropShownUnread(): void {
-    for (const id of [...this.shownUnread.keys()]) if (id !== this.popoverThread && id !== this.selected) this.shownUnread.delete(id);
-  }
-
   setShow(show: boolean): void {
     this.show = show;
     try { localStorage.setItem(SHOW_KEY, show ? '1' : '0'); } catch { /* ignore */ }
@@ -169,9 +157,7 @@ export class Comments {
     this.renderPanel();
     if (this.popoverThread) {
       const t = this.threads.find((x) => x.id === this.popoverThread);
-      // A reply arriving in the open thread is seen right there.
-      if (t && this.unread(t) && !document.hidden) { this.markRead(t.id); return; }
-      if (t) { this.popover?.replaceChildren(...this.threadBody(t, true)); this.markPopover(); }
+      if (t) this.popover?.replaceChildren(...this.threadBody(t, true));
       else this.closePopover();
     }
     this.opts.onChange();
@@ -192,7 +178,12 @@ export class Comments {
   private threadBody(t: CommentThread, inPopover: boolean): Node[] {
     const me = this.opts.me();
     const unread = new Set(unreadMessages(t, this.seen, me.login).map((m) => m.id));
-    for (const id of this.shownUnread.get(t.id) ?? []) unread.add(id);
+    const markRead = unread.size
+      ? h('button', { class: 'ghost icon mark-read', title: 'Mark this thread as read', 'aria-label': 'Mark this thread as read', onclick: (e: Event) => {
+        e.stopPropagation();
+        this.markRead(t.id);
+      } }, icon('read'))
+      : '';
     const head = h('div', { class: 'thread-head' },
       h('span', { class: 'thread-where', title: 'Go to the text' },
         t.from === null ? `${t.path} · text deleted` : `${t.path}:${t.line}`),
@@ -210,6 +201,7 @@ export class Comments {
         const link = this.link(t.id);
         void copyText(link).then(() => toast('Link to this comment copied', 'ok', 1500), () => toast(link));
       } }, 'Link'),
+      markRead,
       t.resolved
         ? h('button', { class: 'ghost icon', title: 'Reopen this thread', onclick: () => void this.act({ op: 'reopen', id: t.id }) }, 'Reopen')
         : h('button', { class: 'ghost icon', title: 'Mark as resolved: hidden from the editor and PDF, kept in the list', onclick: () => void this.act({ op: 'resolve', id: t.id }).then((ok) => { if (ok && inPopover) this.closePopover(); }) }, '✓ Resolve'));
@@ -281,18 +273,12 @@ export class Comments {
     if (this.popoverThread === id && this.popover) { this.position(this.popover, rect, 'beside'); return; }
     this.popoverThread = id;
     this.placePopover(this.threadBody(t, true), rect);
-    this.markPopover();
   }
 
   /** Go to a thread's text in the source. */
   reveal(id: string): void {
     const t = this.threads.find((x) => x.id === id);
     if (t) this.opts.reveal(t);
-  }
-
-  /** The popup of a thread that had new messages when it opened looks like an unread card. */
-  private markPopover(): void {
-    this.popover?.classList.toggle('unread', Boolean(this.popoverThread && this.shownUnread.has(this.popoverThread)));
   }
 
   /**
@@ -365,15 +351,12 @@ export class Comments {
     this.popover?.remove();
     this.popover = null;
     this.popoverThread = null;
-    this.dropShownUnread();
   }
 
   // ------------------------------------------------------------ list
 
   select(id: string | null): void {
     this.selected = id;
-    this.dropShownUnread();
-    if (id) this.markRead(id);
     // A resolved thread is only in the list when it shows all threads.
     if (id && this.filter === 'open' && this.threads.find((t) => t.id === id)?.resolved) {
       this.filter = 'all';
@@ -402,8 +385,7 @@ export class Comments {
     });
     const cards: Node[] = [];
     let list = this.filter === 'open' ? open : [...open, ...resolved];
-    // A thread read just now (open or selected) stays until it is left.
-    if (this.unreadOnly) list = list.filter((t) => this.unread(t) || this.shownUnread.has(t.id) || t.id === this.selected);
+    if (this.unreadOnly) list = list.filter((t) => this.unread(t));
     if (!list.length) {
       cards.push(h('div', { class: 'comments-empty' },
         !this.threads.length ? 'No comments yet. Select text in the editor and press Comment (Ctrl+Alt+M).'
