@@ -116,7 +116,8 @@ must not be exposed to the open internet.
   The boxes come from the glyph widths in the page's drawing operators, not
   from PDF.js's text layer, whose characters can sit a few points off the
   printed glyphs. Text that is not found gets a small box at the start of its
-  line. Threads are conversations: reply, edit, resolve, reopen. The
+  line. Threads are conversations: reply, edit, resolve, reopen.
+  Deleting a reply or a whole thread asks first. The
   **Comments** tab of the side panel lists them, next to the PDF — open ones in document order, resolved ones
   greyed at the bottom — and jumps to the text. **Link** on a thread copies
   an address (`?project=…&comment=<id>`) that opens the project at that

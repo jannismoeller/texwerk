@@ -216,7 +216,10 @@ export class Comments {
       }
       if (mine || this.opts.canModerate()) {
         tools.append(h('button', { class: 'ghost icon', title: i === 0 ? 'Delete the whole thread' : 'Delete this reply', onclick: async () => {
-          if (i === 0 && !await confirmDialog('Delete thread', 'Delete this comment and all its replies?', 'Delete', true)) return;
+          const sure = i === 0
+            ? await confirmDialog('Delete thread', 'Delete this comment and all its replies?', 'Delete', true)
+            : await confirmDialog('Delete reply', 'Delete this reply?', 'Delete', true);
+          if (!sure) return;
           void this.act({ op: 'delete', id: t.id, messageId: m.id });
         } }, 'delete'));
       }

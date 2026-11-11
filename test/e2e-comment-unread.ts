@@ -16,7 +16,8 @@
  *   unread, and the popup's button reads it;
  * - "unread only" lists just the unread threads and is remembered on reload,
  *   a comment link and a selection keep a thread listed and unread, and its
- *   button removes it from the list at once.
+ *   button removes it from the list at once;
+ * - deleting a single reply asks first.
  */
 import { strict as assert } from 'node:assert';
 import { chromium, type Page } from 'playwright-core';
@@ -128,6 +129,24 @@ check('a selected thread stays listed and unread', [(await state(d)).badge, awai
 await d.click(`.thread-card[data-id="${fresh}"] .mark-read`);
 await d.waitForTimeout(300);
 check('its button removes it from the "unread only" list at once', [(await state(d)).badge, await listed(d)], ['0', []]);
+// Deleting a single reply asks first.
+await api('POST', `/api/comments${q}`, { op: 'reply', id: fresh, text: 'Reply to delete' }, 'Dan');
+await d.uncheck('.comments-bar label:has-text("unread only") input');
+await d.waitForTimeout(800);
+const replies = () => d.evaluate((id) => [...document.querySelectorAll(`.thread-card[data-id="${id}"] .msg-text`)].map((m) => m.textContent), fresh);
+const deleteButton = `.thread-card[data-id="${fresh}"] .msg:has-text("Reply to delete") button:has-text("delete")`;
+// The message tools show on hover.
+const clickDelete = async () => { await d.hover(`.thread-card[data-id="${fresh}"] .msg:has-text("Reply to delete")`); await d.click(deleteButton); };
+await clickDelete();
+await d.waitForSelector('.dialog');
+check('deleting a reply asks first', await d.evaluate(() => document.querySelector('.dialog p')?.textContent), 'Delete this reply?');
+await d.click('.dialog button:has-text("Cancel")');
+await d.waitForTimeout(500);
+check('after Cancel the reply is still there', (await replies()).includes('Reply to delete'), true);
+await clickDelete();
+await d.click('.dialog button.danger');
+await d.waitForTimeout(800);
+check('after confirming only that reply is gone', await replies(), ['New comment by Bob', 'Own reply by Ann', 'Bob for Dan']);
 } finally {
   await browser.close();
   await api('POST', `/api/projects/delete${q}`).catch(() => undefined);
