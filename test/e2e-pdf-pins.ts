@@ -18,8 +18,12 @@
  * of the first and last word's ends. The text layer spaces characters with a
  * browser font, so its words are themselves a few points off the glyphs.
  *
+ * A comment on a TeX comment line, which prints nothing, has a pin level
+ * with the nearest printed line and no mark. So has one on the preamble.
+ *
  * Last, a double-click on a mark goes to the comment's text in the editor,
- * and its second click does nothing in the popup the first one opened.
+ * and its second click does nothing in the popup the first one opened. So
+ * does a double-click on the pin of the TeX comment line.
  */
 import { strict as assert } from 'node:assert';
 import { chromium } from 'playwright-core';
@@ -61,6 +65,7 @@ const compiled = await api('POST', `/api/compile${q}&wait=1`);
 assert.ok(compiled.compile.hasPdf, 'the test document compiles');
 for (const quote of targets) await api('POST', `/api/comments${q}`, { op: 'create', path: 'main.tex', quote, text: `PIN ${quote}` });
 await api('POST', `/api/comments${q}`, { op: 'create', path: 'main.tex', quote: '% a TeX comment that is never printed', text: 'PIN none' });
+await api('POST', `/api/comments${q}`, { op: 'create', path: 'main.tex', quote: String.raw`\documentclass{article}`, text: 'PIN preamble' });
 const itemLine = String.raw`\item Morning route: short-distance walk along the river, stops at three bridges and a small village celebration, the old-town museum with its archives.`;
 const longParagraph = `Long paragraph. ${filler.repeat(40)}It ends right here.`;
 const markCases = [
@@ -102,14 +107,21 @@ try {
   const pins = (await page.$$eval('.pdf-pin', (els) => els.map((el) => {
     const pageEl = el.parentElement as HTMLElement;
     const index = [...pageEl.parentElement!.children].indexOf(pageEl);
-    const markEl = pageEl.querySelector(`.pdf-comment-mark[data-thread="${(el as HTMLElement).dataset.thread}"]`) as HTMLElement;
+    const thread = (el as HTMLElement).dataset.thread;
+    const markEl = pageEl.querySelector(`.pdf-comment-mark[data-thread="${thread}"]`) as HTMLElement | null;
     return {
-      title: (el as HTMLElement).title, page: index + 1, left: parseFloat(markEl.style.left), top: parseFloat(markEl.style.top),
-      bubbleTop: (el as HTMLElement).offsetTop, markHeight: markEl.offsetHeight, pageWidthPx: pageEl.clientWidth,
+      title: (el as HTMLElement).title, thread, page: index + 1, left: parseFloat(markEl?.style.left ?? 'NaN'), top: parseFloat(markEl?.style.top ?? 'NaN'),
+      bubbleTop: (el as HTMLElement).offsetTop, markHeight: markEl?.offsetHeight ?? 0, pageWidthPx: pageEl.clientWidth,
+      marks: document.querySelectorAll(`.pdf-comment-mark[data-thread="${thread}"]`).length,
     };
   }))).filter((p) => p.title.includes('PIN '));
   const pageWidthPt = (await (await doc.getPage(1)).getViewport({ scale: 1 })).width;
-  assert.equal(pins.length, targets.length, 'one pin per printed comment, none for the TeX comment');
+  assert.equal(pins.length, targets.length + 2, 'one pin per comment, the TeX comment and the preamble included');
+  const preamble = pins.find((p) => p.title.includes('PIN preamble'))!;
+  console.log(`${preamble.marks === 0 ? 'ok  ' : 'FAIL'} a comment on the preamble has a pin and no mark: ${preamble.marks} marks, pin on page ${preamble.page}`);
+  if (preamble.marks !== 0) failed = true;
+  // The TeX comment line: a pin level with the printed line SyncTeX gives for it (the next paragraph's first), and no mark.
+  const silent = pins.find((p) => p.title.includes('PIN none'))!;
   for (const t of targets) {
     const pin = pins.find((p) => p.title.includes(`PIN ${t}`));
     const want = expected.get(t)!;
@@ -132,6 +144,13 @@ try {
   }
   await page.waitForTimeout(300);
   const pxPerPt = await page.evaluate(() => (document.querySelector('.pdf-page') as HTMLElement).clientWidth) / pageWidthPt;
+  const nextLine = await page.evaluate(() => {
+    const span = [...document.querySelectorAll('.textLayer span')].find((s) => s.textContent!.includes('Second paragraph.'));
+    return span ? (span as HTMLElement).getBoundingClientRect().top - span.closest('.pdf-page')!.getBoundingClientRect().top : null;
+  });
+  const silentOk = silent.marks === 0 && nextLine !== null && Math.abs(silent.bubbleTop - nextLine) <= 14;
+  console.log(`${silentOk ? 'ok  ' : 'FAIL'} a comment on a TeX comment line has a pin and no mark: ${silent.marks} marks, pin at ${silent.bubbleTop} px, next printed line at ${nextLine === null ? 'not found' : `${nextLine.toFixed(0)} px`}`);
+  if (!silentOk) failed = true;
   for (const c of markCases) {
     const id = markIds.get(c.name)!;
     const r = await page.evaluate(([id, words, outside, first]) => {
@@ -189,6 +208,14 @@ try {
   const jumped = !before.includes('quintessential') && after.includes('quintessential') && kept;
   console.log(`${jumped ? 'ok  ' : 'FAIL'} a double-click on a comment mark goes to its text${jumped ? '' : `: line before ${JSON.stringify(before.slice(0, 40))}, after ${JSON.stringify(after.slice(0, 40))}, popup and mark kept ${kept}`}`);
   if (!jumped) failed = true;
+  // The same for the pin of the comment on the TeX comment line.
+  await page.keyboard.press('Escape');
+  await page.locator(`.pdf-pin[data-thread="${silent.thread}"]`).dblclick();
+  await page.waitForTimeout(800);
+  const atComment = await page.evaluate(() => document.querySelector('.cm-activeLine')?.textContent ?? '');
+  const pinJumped = atComment.includes('a TeX comment that is never printed');
+  console.log(`${pinJumped ? 'ok  ' : 'FAIL'} a double-click on the pin of a TeX comment line goes to that line${pinJumped ? '' : `: line ${JSON.stringify(atComment.slice(0, 40))}`}`);
+  if (!pinJumped) failed = true;
 } finally {
   await browser.close();
 }

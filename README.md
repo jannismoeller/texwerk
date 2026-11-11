@@ -115,8 +115,11 @@ must not be exposed to the open internet.
   page and the next with the same matching as for PDF selections below.
   The boxes come from the glyph widths in the page's drawing operators, not
   from PDF.js's text layer, whose characters can sit a few points off the
-  printed glyphs. Text that is not found gets a small box at the start of its
-  line. Threads are conversations: reply, edit, resolve, reopen.
+  printed glyphs.
+  A comment on text that is not printed gets no mark, only its pin, level with the nearest printed line that SyncTeX gives for it.
+  That covers TeX comment lines, a `\label`, the preamble and any text that is not found among the glyphs.
+  A double-click on the pin jumps to the comment's text in the source.
+  Threads are conversations: reply, edit, resolve, reopen.
   Deleting a reply or a whole thread asks first. The
   **Comments** tab of the side panel lists them, next to the PDF — open ones in document order, resolved ones
   greyed at the bottom — and jumps to the text. **Link** on a thread copies

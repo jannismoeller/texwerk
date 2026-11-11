@@ -403,9 +403,9 @@ export async function renderEditor(app: HTMLElement, project: string, meInfo: Me
         // SyncTeX knows the line; the PDF's own glyphs say where the words are.
         // The commented text as it is now, which is what the PDF was compiled from.
         const now = t.from !== null && t.to !== null ? texts.get(t.path)?.toString().slice(t.from, t.to) : undefined;
+        // Text that is not printed (a TeX comment, a \label) has no mark, only its pin.
         const spot = await viewer.locate(pos, now || t.quote);
-        if (!spot) continue;
-        const first = spot.rects[0];
+        const first = spot.at;
         pins.push({ id: t.id, page: first.page, x: first.x, y: first.y, width: first.width, height: first.height, marks: spot.rects, color: colorFor(t.login.replace(/:agent$/, '')), title: `${t.messages[0]?.author}: ${t.messages[0]?.text ?? ''}`.slice(0, 200) });
       }
       if (request !== pinsRequest) return;

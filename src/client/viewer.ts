@@ -25,12 +25,15 @@ export type Tab = 'pdf' | 'log' | 'file';
 export interface PdfPin {
   id: string;
   page: number;
-  /** The first mark's box (level with the margin pin), in PDF points from the top-left. */
+  /**
+   * The box the margin pin is level with, in PDF points from the top-left:
+   * the first mark's, or the nearest printed line's when there is no mark.
+   */
   x: number;
   y: number;
   width: number;
   height: number;
-  /** One box per printed line of the commented text, possibly on two pages. */
+  /** One box per printed line of the commented text, possibly on two pages; none when it is not printed. */
   marks: PdfRect[];
   color: string;
   title: string;
@@ -38,9 +41,10 @@ export interface PdfPin {
 
 /** Where a quote is printed: one box per line, in PDF points from each page's top-left. */
 export interface QuoteSpot {
+  /** One box per printed line of the quote; empty when the quote is not printed. */
   rects: PdfRect[];
-  /** False when the text was not found and the box only marks where SyncTeX puts its line. */
-  exact: boolean;
+  /** Where the margin pin goes: the first of `rects`, or else the printed line SyncTeX puts the quote at. */
+  at: PdfRect;
 }
 
 /** Where SyncTeX puts a source line: its page and the block of its boxes there. */
@@ -228,12 +232,12 @@ class PdfView {
   /**
    * Where the LaTeX `quote` is printed, given where SyncTeX puts its first
    * line: its text is searched among the glyphs of that page and the next
-   * (pdfMatch.ts), nearest that line. When the text is not found, one small
-   * box on the printed line where SyncTeX puts it. Null only when the quote
-   * prints nothing (a TeX comment, a command, the preamble).
+   * (pdfMatch.ts), nearest that line. A quote that prints nothing (a TeX
+   * comment, a \label, the preamble) or whose text is not found among the
+   * glyphs gets no boxes, only the place of the printed line SyncTeX gives
+   * (the nearest one to it), for the margin pin.
    */
-  async locate(pos: LinePosition, quote: string): Promise<QuoteSpot | null> {
-    if (!sourceSkeleton(quote).text) return null;
+  async locate(pos: LinePosition, quote: string): Promise<QuoteSpot> {
     const [here, next] = await Promise.all([this.pageGlyphs(pos.page), this.pageGlyphs(pos.page + 1)]);
     const onLine = (g: PdfGlyph) => {
       const mid = (g.top + g.bottom) / 2;
@@ -243,13 +247,11 @@ class PdfView {
     let near = here.findIndex((g) => onLine(g) && g.x1 >= pos.x - 1 && /[\p{L}\p{N}]/u.test(g.text));
     if (near < 0) near = here.findIndex(onLine);
     const glyphs = [...here, ...next];
-    const match = matchQuoteInPdf(quote, glyphs, Math.max(0, near));
-    if (match) return { rects: glyphRects(glyphs, match.first, match.last), exact: true };
+    const match = sourceSkeleton(quote).text ? matchQuoteInPdf(quote, glyphs, Math.max(0, near)) : null;
+    const rects = match ? glyphRects(glyphs, match.first, match.last) : [];
+    if (rects.length) return { rects, at: rects[0] };
     const g = near >= 0 ? here[near] : null;
-    return {
-      rects: [g ? { page: pos.page, x: g.x0, y: g.top, width: 12, height: g.bottom - g.top } : { page: pos.page, x: pos.x, y: pos.top, width: 12, height: 10 }],
-      exact: false,
-    };
+    return { rects: [], at: g ? { page: pos.page, x: g.x0, y: g.top, width: 0, height: g.bottom - g.top } : { page: pos.page, x: pos.x, y: pos.top, width: 0, height: 10 } };
   }
 
   /** Pins in the right margin of each page; several on one spot stack. */
@@ -721,7 +723,7 @@ export class Viewer {
     return Object.fromEntries(this.pinsNow.map((p) => [p.id, { page: p.page, x: p.x, y: p.y, width: p.width, height: p.height }]));
   }
 
-  locate(pos: LinePosition, quote: string): Promise<QuoteSpot | null> {
+  locate(pos: LinePosition, quote: string): Promise<QuoteSpot> {
     return this.pdf.locate(pos, quote);
   }
 
