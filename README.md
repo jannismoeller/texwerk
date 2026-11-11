@@ -16,6 +16,58 @@ project into a local folder and keeps it in sync both ways.
 
 ![Editing a paper in TeXWerk](docs/images/editor.png)
 
+## Changes in this fork
+
+This branch (`local-light-theme`) extends upstream TeXWerk from commit `3835de6`.
+It lives only in a local repository and is not yet pushed to a public fork.
+
+### Themes and theme picker
+
+- The interface has three colour themes: Light, Dark and Tokyo Night. Light is the default, and upstream had only the dark scheme that is now called Tokyo Night.
+- A sun or moon icon at the right end of the top bar opens the theme menu. The choice is stored per browser (`texwerk-theme` in localStorage) and also applies to the projects page and the history diff.
+- All colours come from theme variables in `src/client/style.css`. Author colours have a separate ink per theme, so highlights, gutter bubbles and PDF marks stay readable on light and dark backgrounds. The theme registry is the new file `src/client/theme.ts`.
+
+### Side panel layout
+
+- Files, Comments and Chat are tabs of a side panel on the left (`src/client/sidePanel.ts`). Upstream showed Comments and Chat as tabs beside the PDF, so a thread and its page could not be seen together. The right column keeps PDF, Log and opened files.
+- The sidebar button left of the project name, or Ctrl+Alt+B, hides the whole panel. The active tab and the hidden state are stored per browser.
+
+### Comment popup
+
+- A click in commented text opens the thread's popup to the right of the clicked text, but the focus stays in the editor and the caret goes where the click put it. Upstream moved the focus into the reply box. The reply box takes the focus only when it is clicked.
+- The popup shortens a long file path, so the Resolve button stays visible, and it has an "In list" button that selects the thread in the Comments tab.
+
+### Comments from PDF selections and PDF marks
+
+- Text selected in the PDF can be commented: a Comment button appears below the selection, and Ctrl+Alt+M works too. The comment is an ordinary thread on the matching range of the `.tex` source. The match is found by the new `src/shared/pdfMatch.ts`, which compares letters and digits only and falls back to an approximate match or whole lines. A selection that starts or ends inside a word covers the whole word.
+- A comment's mark in the PDF covers its whole text, one box per printed line, placed on the printed glyphs (new file `src/client/pdfGlyphs.ts`). Upstream marked only the first words, often beside them. A comment that spans a page break is marked on both pages.
+- A comment on text that is not printed, such as a TeX comment line, a `\label` or the preamble, gets only a margin pin level with the nearest printed line, and no mark.
+
+### Unread comments and "mark as read"
+
+- The server keeps per project which comment messages each name has seen, in the new file `.texwerk/read-state.json`. The state is the same in every browser of a name and is not committed. A name the project has never seen starts with all existing threads read. The browser reports what was read through the new endpoint `/api/comments/read`.
+- A thread with messages from someone else that this name has not seen is unread. Its gutter bubble gets an orange badge, its card an orange frame, and each unseen message an orange line. The Comments tab shows the number of unread threads.
+- A thread is read only through its "mark as read" envelope button, in the card and in the popup. Opening, selecting or replying to it does not read it.
+
+### Filter and confirmations
+
+- An "unread only" checkbox in the Comments tab lists only unread threads. The browser remembers it (`texwerk-comments-unread-only` in localStorage).
+- "Mark all read" asks for confirmation and names the number of threads it marks.
+- Deleting a single reply asks for confirmation. Upstream asked only before deleting the first message of a thread.
+
+### PDF zoom towards the cursor
+
+- Ctrl+wheel and a touchpad pinch zoom towards the point under the cursor, horizontally and vertically. Upstream kept the vertical middle in place, so on a wide page every zoom drifted towards the left edge. The zoom buttons and "fit width" keep the middle of the view in place.
+
+### Double-click on PDF marks
+
+- A double-click on a comment's mark or pin in the PDF jumps to the comment's text in the editor. Upstream did nothing, because the first click opened the popup over the mark and the second click landed in the popup.
+
+### Two new start flags
+
+- `--projects <name>[,<name>...]` serves only the named top-level folders of the projects folder and writes nothing into the projects folder or other folders (see [Serving one project from a shared folder](#serving-one-project-from-a-shared-folder)).
+- `--no-git` refuses every git operation that writes, and the client shows "Label version" and "Git…" greyed out (same section).
+
 ## Why TeXWerk?
 
 My lab writes all its papers in LaTeX, together, and more and more with AI
